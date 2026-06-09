@@ -6,7 +6,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pgf import FigureCanvasPgf
 matplotlib.backend_bases.register_backend('pdf', FigureCanvasPgf)
-import os
+from pathlib import Path
 
 def get_latex_code(user_input):
     latex_code = user_input
@@ -32,11 +32,13 @@ def for_render_code(latex_code):
     return latex_code
 
 
+def write_latex_debug(latex_code, output_path):
+    debug_path = Path(output_path).with_suffix('.txt')
+    debug_path.write_text(latex_code, encoding='utf-8')
+
+
 def render_latex_to_pdf(latex_code, output_file):
-    base_name, ext = os.path.splitext(output_file)
-    new_output_file = base_name+'.txt'
-    with open(new_output_file, 'w') as file:
-        file.write(latex_code)
+    write_latex_debug(latex_code, output_file)
     plt.rc('text', usetex=False)
     plt.rc('pgf', rcfonts=False, preamble=latex_code)
 

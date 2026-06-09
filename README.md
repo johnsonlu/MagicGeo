@@ -74,11 +74,16 @@ You can also use other OpenAI-compatible providers (e.g., Qwen, OpenAI, etc.) by
 ## Usage
 
 ```bash
-cd geo
-python text_to_geometric.py
+uv run -m geo.text_to_geometric
 ```
 
-By default, it processes `../json/circle.json`. To use a different dataset, edit the `__main__` block in `geo/text_to_geometric.py`.
+Run a single question by ID:
+
+```bash
+uv run -m geo.text_to_geometric ../json/circle.json 0
+```
+
+Arguments: `<json_path>` (default: `../json/circle.json`) `<question_id>` (omit to run all).
 
 ## Datasets
 

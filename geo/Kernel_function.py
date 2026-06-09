@@ -1,5 +1,5 @@
 import numpy as np
-from Auxiliary_function import check_condition_break
+from geo.Auxiliary_function import check_condition_break
 
 def extract_and_modify(coordinates, condition_code, variables):
 

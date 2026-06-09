@@ -2,25 +2,30 @@ import json
 import re
 import sys
 import multiprocessing
-import time
-import math
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 from openai import OpenAI
 
 load_dotenv()
-from Auxiliary_function import parse_points_info, convert_coordinates, extract_info, convert_conditions
-from Kernel_function import extract_and_modify
-from latex_pdf_open import get_latex_code, for_render_code, render_latex_to_pdf
+
+from geo.Auxiliary_function import parse_points_info, convert_coordinates, extract_info, convert_conditions
+from geo.Kernel_function import extract_and_modify
+from geo.latex_pdf_open import get_latex_code, for_render_code, render_latex_to_pdf
+
+# ================= 路径常量 =================
+PROJECT_DIR = Path(__file__).resolve().parent.parent
+OUTPUT_DIR = Path(os.getenv("OUTPUT_DIR", PROJECT_DIR / "output"))
+JSON_DIR = PROJECT_DIR / "json"
+PROMPT_DIR = PROJECT_DIR / "prompt"
 
 # ================= 配置与初始化 =================
-API_CONFIG = {
-    "api_key": os.getenv("API_KEY", "YOUR_API_KEY"),
-    "base_url": os.getenv("BASE_URL", "https://api.deepseek.com"),
-    "model": os.getenv("MODEL_NAME", "deepseek-v4-flash")
-}
+client = OpenAI(
+    api_key=os.getenv("API_KEY", "YOUR_API_KEY"),
+    base_url=os.getenv("BASE_URL", "https://api.deepseek.com"),
+)
 
-client = OpenAI(**API_CONFIG)
+MODEL_NAME = os.getenv("MODEL_NAME", "deepseek-v4-flash")
 
 # ================= 核心工具函数 =================
 
@@ -28,7 +33,7 @@ def call_llm(system_prompt, user_content, temperature=0.0):
     """通用 LLM 调用接口"""
     try:
         response = client.chat.completions.create(
-            model=API_CONFIG["model"],
+            model=MODEL_NAME,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_content},
@@ -85,10 +90,11 @@ def run_extract_and_modify(generated_points, condition_code, variables, output_q
 
 
 
-def process_geometry_task(item, generic_knowledge, output_dir="../output"):
-    """
-    重构后的通用几何题目处理流程
-    """
+def process_geometry_task(item, generic_knowledge, output_dir=None):
+    if output_dir is None:
+        output_dir = OUTPUT_DIR
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
     text = item['subject']
     print(f"\n--- 正在处理题目 ID: {item['id']} ---")
     
@@ -99,15 +105,16 @@ def process_geometry_task(item, generic_knowledge, output_dir="../output"):
     instruct = (
         "根据数学几何题意和辅助信息，执行以下任务：\n"
         "1. 列出所有点的坐标表示（优先使用已知常数，未知用变量，禁止包含角度标记）。\n"
-        "2. 列出所有几何约束条件。\n"
-        "输出格式必须严格为：\n"
-        "坐标：\n{'A':(x,y)}\n"
-        "条件：\n{'c1':'x**2 + y**2 = r**2'}"
+        "2. 列出所有几何约束条件，每个条件单独一行。\n"
+        "输出格式必须严格为（元素间用换行分隔，不要用逗号）：\n"
+        "坐标：\n{'A':(x,y)\n'B':(a,b)}\n"
+        "条件：\n{'c1': dist(O, A, r)\n'c2': angle(A, B, C, 25)}"
     )
 
     # 获取坐标与条件解析 
     full_prompt = f"{generic_knowledge}\n\n当前题目辅助背景：{extra_info}"
-    response_text = call_llm(full_prompt, f"题目:{text}\n任务:{instruct}")
+    user_msg = f"题目:{text}\n任务:{instruct}"
+    response_text = call_llm(full_prompt, user_msg)
     
     if not response_text: 
         print("LLM 解析失败")
@@ -166,7 +173,7 @@ def process_geometry_task(item, generic_knowledge, output_dir="../output"):
                             fusion[mid_p] = calcmidpoint(fusion[match[0]], fusion[match[1]])
 
             # 7. 渲染输出
-            render_geometry_pdf(text, fusion, f"{output_dir}/{item['id']}.pdf")
+            render_geometry_pdf(text, fusion, str(output_dir / f"{item['id']}.pdf"))
         else:
             print("未能找到符合条件的数值解")
             
@@ -194,37 +201,30 @@ def render_geometry_pdf(text, fusion, output_path):
 
 
 def main(input_json_path):
-    knowledge_file = '../prompt/geometry_knowledge.dat'
-    with open(knowledge_file, 'r', encoding='utf-8') as f:
-        generic_knowledge = f.read()
-
-    # 加载题目
-    if not os.path.exists(input_json_path):
+    generic_knowledge = (PROMPT_DIR / "geometry_knowledge.dat").read_text(encoding='utf-8')
+    input_path = Path(input_json_path)
+    if not input_path.exists():
         print(f"错误：找不到文件 {input_json_path}")
         return
 
-    with open(input_json_path, 'r', encoding='utf-8') as f:
-        data = json.load(f)
-
+    data = json.loads(input_path.read_text(encoding='utf-8'))
     print(f"开始自动化处理任务，共 {len(data)} 题...")
     for item in data:
         process_geometry_task(item, generic_knowledge)
 
 if __name__ == "__main__":
-    import sys
-    json_path = sys.argv[1] if len(sys.argv) > 1 else '../json/circle.json'
+    json_path = Path(sys.argv[1]) if len(sys.argv) > 1 else JSON_DIR / "circle.json"
+    if not json_path.is_absolute():
+        json_path = PROJECT_DIR / json_path
     question_id = int(sys.argv[2]) if len(sys.argv) > 2 else None
 
-    knowledge_file = '../prompt/geometry_knowledge.dat'
-    with open(knowledge_file, 'r', encoding='utf-8') as f:
-        generic_knowledge = f.read()
+    generic_knowledge = (PROMPT_DIR / "geometry_knowledge.dat").read_text(encoding='utf-8')
 
-    if not os.path.exists(json_path):
+    if not json_path.exists():
         print(f"错误：找不到文件 {json_path}")
         sys.exit(1)
 
-    with open(json_path, 'r', encoding='utf-8') as f:
-        data = json.load(f)
+    data = json.loads(json_path.read_text(encoding='utf-8'))
 
     if question_id is not None:
         item = next((x for x in data if x['id'] == question_id), None)

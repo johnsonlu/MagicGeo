@@ -1,7 +1,7 @@
 import os
 import re
 from dotenv import load_dotenv
-from Geometric_function import dist, angle, angle_bisector, equal_line,  ortho, online, midpoint,parallel,angle_relation,arc_midpoint, online_extension, online_inside, calc_var_from_dist, is_point_in_triangle, is_acute_triangle, is_point_out_triangle, line_ratio
+from geo.Geometric_function import dist, angle, angle_bisector, equal_line,  ortho, online, midpoint,parallel,angle_relation,arc_midpoint, online_extension, online_inside, calc_var_from_dist, is_point_in_triangle, is_acute_triangle, is_point_out_triangle, line_ratio
 from openai import OpenAI
 
 load_dotenv()
@@ -80,16 +80,22 @@ def convert_conditions(text,variables,coordinates,conditions_str, radius=None):
     lines = conditions_str.strip().split('\n')
 
     for line in lines:
-        match = re.match(r"'(\w+)':\s*(\w+)\((.*)\)", line.strip())
-        if match:
-            condition_type = match.group(1)
-            function_name = match.group(2)
-            params = [param.strip() for param in re.split(r',\s*(?![^(]*\))', match.group(3))]
-            if check_function_format(function_name,params, radius):
-                if condition_type in calculate_point_function:
-                    calculate_point_conditions.append([function_name,params])
-                else:
-                    conditions.append([function_name,params])
+        if not line.strip():
+            continue
+        # handle comma-separated conditions on one line
+        parts = re.split(r",(?=\s*')", line.strip())
+        for part in parts:
+            part = part.strip().rstrip(',')
+            match = re.match(r"'(\w+)':\s*(\w+)\((.*)\)", part)
+            if match:
+                condition_type = match.group(1)
+                function_name = match.group(2)
+                params = [param.strip() for param in re.split(r',\s*(?![^(]*\))', match.group(3))]
+                if check_function_format(function_name,params, radius):
+                    if condition_type in calculate_point_function:
+                        calculate_point_conditions.append([function_name,params])
+                    else:
+                        conditions.append([function_name,params])
     for cond in reversed(conditions):
         # check wirh LLM whether the condition is right or not
         condition_right = LLM_check(text,cond)
@@ -167,28 +173,25 @@ def convert_conditions(text,variables,coordinates,conditions_str, radius=None):
 
 """生成符合对应格式的字典"""
 def parse_points_info(points_str):
-    """
-    从给定的字符串中解析点的坐标信息，并生成一个字典 points_info。
-
-    参数：
-    points_str -- 包含点和坐标信息的字符串，每行一个点和对应的坐标
-
-    返回值：
-    返回一个字典，其中键是点的名称，值是点的坐标（已知的坐标为元组形式，未知的坐标为字符串）
-    """
     points_info = {}
     points_str = points_str.replace(" ", "")
     lines = points_str.strip().split('\n')
 
     for line in lines:
-        match = re.match(r"'(\w)':\(([^,]+),([^,]+)\)", line.strip())
-        if match:
-            point = match.group(1)
-            x, y = match.group(2), match.group(3)
-            if x.replace('.', '', 1).isdigit() and y.replace('.', '', 1).isdigit():
-                points_info[point] = (float(x), float(y))
-            else:
-                points_info[point] = f"{x}, {y}"
+        if not line.strip():
+            continue
+        # handle comma-separated entries on one line
+        parts = re.split(r",(?=')", line.strip())
+        for part in parts:
+            part = part.strip().rstrip(',')
+            match = re.match(r"'(\w)':\(([^,]+),([^,]+)\)", part)
+            if match:
+                point = match.group(1)
+                x, y = match.group(2), match.group(3)
+                if x.replace('.', '', 1).isdigit() and y.replace('.', '', 1).isdigit():
+                    points_info[point] = (float(x), float(y))
+                else:
+                    points_info[point] = f"{x}, {y}"
 
     return points_info
 
@@ -234,9 +237,9 @@ def convert_coordinates(coordinates, radius=None):
 
 """提取坐标和条件信息"""
 def extract_info(text):
-    # 使用正则表达式匹配坐标和条件信息
-    coord_pattern = re.compile(r'坐标：\s*{([^}]*)}', re.DOTALL)
-    cond_pattern = re.compile(r'条件：\s*{([^}]*)}', re.DOTALL)
+    # 支持带 {} 和不带 {} 两种格式
+    coord_pattern = re.compile(r'坐标：\s*\{?([^}]*?)\}?(?=\s*条件：|$)', re.DOTALL)
+    cond_pattern = re.compile(r'条件：\s*\{?([^}]*?)\}?(?=$)', re.DOTALL)
 
     coords = coord_pattern.search(text)
     conds = cond_pattern.search(text)
