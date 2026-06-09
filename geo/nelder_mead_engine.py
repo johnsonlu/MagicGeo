@@ -317,6 +317,28 @@ def extract_and_modify_nelder_mead(coordinates, condition_code, variables):
             if raw_penalty < EARLY_EXIT_PENALTY:
                 break
 
+    # L-BFGS-B polish: refine the best Nelder-Mead result with a gradient-based pass
+    if best_x is not None and time.monotonic() < deadline:
+        bounds = [(COORDINATE_LOW, COORDINATE_HIGH)] * n_vars
+        polish_result = minimize(
+            objective,
+            best_x,
+            method="L-BFGS-B",
+            bounds=bounds,
+            options={"maxiter": NELDER_MEAD_MAXITER, "disp": False},
+        )
+        polish_candidate = _apply_values(variables, key_list, polish_result.x)
+        polish_penalty = polish_result.fun
+        polish_feasible = _is_feasible(condition_code, coordinates, polish_candidate)
+
+        if polish_feasible and polish_penalty < best_penalty:
+            best_penalty = polish_penalty
+            best_variables = polish_candidate
+            print(f"L-BFGS-B polish: feasible assignment (penalty={polish_penalty:.6f})")
+        elif best_variables is None and polish_feasible:
+            best_variables = polish_candidate
+            print(f"L-BFGS-B polish: rescued feasible assignment (penalty={polish_penalty:.6f})")
+
     if best_variables is not None:
         for key in variables:
             variables[key] = best_variables[key]
