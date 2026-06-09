@@ -1,5 +1,6 @@
 import json
 import re
+import sys
 import multiprocessing
 import time
 import math
@@ -210,6 +211,27 @@ def main(input_json_path):
         process_geometry_task(item, generic_knowledge)
 
 if __name__ == "__main__":
-    main('../json/circle.json')
-    # main('../json/triangle.json')
-    # main('../json/quadrangle.json')
+    import sys
+    json_path = sys.argv[1] if len(sys.argv) > 1 else '../json/circle.json'
+    question_id = int(sys.argv[2]) if len(sys.argv) > 2 else None
+
+    knowledge_file = '../prompt/geometry_knowledge.dat'
+    with open(knowledge_file, 'r', encoding='utf-8') as f:
+        generic_knowledge = f.read()
+
+    if not os.path.exists(json_path):
+        print(f"错误：找不到文件 {json_path}")
+        sys.exit(1)
+
+    with open(json_path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+
+    if question_id is not None:
+        item = next((x for x in data if x['id'] == question_id), None)
+        if item is None:
+            print(f"错误：未找到 id={question_id} 的题目")
+            sys.exit(1)
+        process_geometry_task(item, generic_knowledge)
+    else:
+        for item in data:
+            process_geometry_task(item, generic_knowledge)
