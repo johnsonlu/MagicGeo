@@ -22,7 +22,7 @@ from geo.coordinate_engine_config import (
     NELDER_MEAD_RESTARTS,
 )
 
-_EXECUTE_CODE_RE = re.compile(r"^(\w+)\(variables,(.+),coordinates\)$")
+_EXECUTE_CODE_RE = re.compile(r"^(\w+)\((?:variables,)?(.+),coordinates\)$")
 _COORD_REF_RE = re.compile(r"coordinates\['(\w+)'\]")
 _NUMERIC_RE = re.compile(r"^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$")
 
@@ -40,6 +40,8 @@ def _parse_execute_code(execute_code):
             params.append(coord_match.group(1))
         elif _NUMERIC_RE.match(token):
             params.append(float(token))
+        elif token == "variables":
+            continue  # skip namespace parameter
         else:
             return None, []
     return func_name, params
@@ -150,13 +152,16 @@ def _constraint_residual(func_name, params, variables, coordinates):
         elif y_f := f[1] - e[1]:
             k = (b[1] - e[1]) / y_f
         else:
-            return residual + BOOLEAN_PENALTY
+            return residual + 1.0
 
         if func_name == "online_inside":
-            if k <= 0 or k >= 1:
-                residual += BOOLEAN_PENALTY
-        elif func_name == "online_extension" and 0 <= k <= 1:
-            residual += BOOLEAN_PENALTY
+            if k <= 0:
+                residual += k ** 2
+            elif k >= 1:
+                residual += (k - 1) ** 2
+        elif func_name == "online_extension":
+            if 0 <= k <= 1:
+                residual += min(k, 1 - k) ** 2
         return residual
 
     if func_name == "parallel" and len(params) == 4:
@@ -170,6 +175,102 @@ def _constraint_residual(func_name, params, variables, coordinates):
         norm_cd = math.hypot(d[0] - c[0], d[1] - c[1])
         normalizer = max(norm_ab * norm_cd, 0.1)
         return (cross / normalizer) ** 2
+
+    if func_name == "is_point_in_triangle" and len(params) == 4:
+        points = _resolve_points(variables, coordinates, params)
+        if points is None:
+            return None
+        A, B, C, P = points
+        def _cross(O, X, Y):
+            return (X[0] - O[0]) * (Y[1] - O[1]) - (X[1] - O[1]) * (Y[0] - O[0])
+        # Triangle orientation (independent of P)
+        orient = _cross(A, B, C)
+        if abs(orient) < 1e-10:
+            return 0.0
+        # Signed distances from P to each edge, normalized so inside = positive
+        sign = 1.0 if orient > 0 else -1.0
+        d1 = sign * _cross(A, B, P) / math.hypot(B[0] - A[0], B[1] - A[1])
+        d2 = sign * _cross(B, C, P) / math.hypot(C[0] - B[0], C[1] - B[1])
+        d3 = sign * _cross(C, A, P) / math.hypot(A[0] - C[0], A[1] - C[1])
+        if d1 >= 0 and d2 >= 0 and d3 >= 0:
+            return 0.0
+        # Outside: penalize violated edges
+        penalty = 0.0
+        for d in (d1, d2, d3):
+            if d < 0:
+                penalty += d ** 2
+        return penalty
+
+    if func_name == "is_point_out_triangle" and len(params) == 4:
+        points = _resolve_points(variables, coordinates, params)
+        if points is None:
+            return None
+        A, B, C, P = points
+        def _cross(O, X, Y):
+            return (X[0] - O[0]) * (Y[1] - O[1]) - (X[1] - O[1]) * (Y[0] - O[0])
+        orient = _cross(A, B, C)
+        if abs(orient) < 1e-10:
+            return 0.0
+        sign = 1.0 if orient > 0 else -1.0
+        d1 = sign * _cross(A, B, P) / math.hypot(B[0] - A[0], B[1] - A[1])
+        d2 = sign * _cross(B, C, P) / math.hypot(C[0] - B[0], C[1] - B[1])
+        d3 = sign * _cross(C, A, P) / math.hypot(A[0] - C[0], A[1] - C[1])
+        if d1 >= 0 and d2 >= 0 and d3 >= 0:
+            # Inside: penalize by closest edge (must cross to get out)
+            return min(d1, d2, d3) ** 2
+        return 0.0
+
+    if func_name == "is_acute_triangle" and len(params) == 3:
+        points = _resolve_points(variables, coordinates, params)
+        if points is None:
+            return None
+        A, B, C = points
+        AB = (B[0] - A[0], B[1] - A[1])
+        AC = (C[0] - A[0], C[1] - A[1])
+        BA = (-AB[0], -AB[1])
+        BC = (C[0] - B[0], C[1] - B[1])
+        CA = (-AC[0], -AC[1])
+        CB = (-BC[0], -BC[1])
+        dot_A = AB[0] * AC[0] + AB[1] * AC[1]
+        dot_B = BA[0] * BC[0] + BA[1] * BC[1]
+        dot_C = CA[0] * CB[0] + CA[1] * CB[1]
+        norm_AB = math.hypot(*AB)
+        norm_AC = math.hypot(*AC)
+        norm_BC = math.hypot(*BC)
+        n_A = max(norm_AB * norm_AC, 0.1)
+        n_B = max(norm_AB * norm_BC, 0.1)
+        n_C = max(norm_AC * norm_BC, 0.1)
+        if dot_A > 0 and dot_B > 0 and dot_C > 0:
+            return 0.0
+        penalty = 0.0
+        for dot, n in ((dot_A, n_A), (dot_B, n_B), (dot_C, n_C)):
+            if dot <= 0:
+                penalty += (dot / n) ** 2
+        return penalty
+
+    if func_name == "angle_bisector" and len(params) == 5:
+        points = _resolve_points(variables, coordinates, params)
+        if points is None:
+            return None
+        A, D, C, A_dup, B = points
+        AB = (B[0] - A[0], B[1] - A[1])
+        AD = (D[0] - A[0], D[1] - A[1])
+        AC = (C[0] - A[0], C[1] - A[1])
+        angle_BAD = _calculate_angle_deg(AB, AD)
+        angle_CAD = _calculate_angle_deg(AC, AD)
+        if angle_BAD < 10 or angle_CAD < 10:
+            return 0.1
+        return ((angle_BAD - angle_CAD) / 180) ** 2
+
+    if func_name == "arc_midpoint" and len(params) == 3:
+        points = _resolve_points(variables, coordinates, params)
+        if points is None:
+            return None
+        A, B, C = points
+        dist_AB_sq = (A[0] - B[0]) ** 2 + (A[1] - B[1]) ** 2
+        dist_AC_sq = (A[0] - C[0]) ** 2 + (A[1] - C[1]) ** 2
+        normalizer = max(dist_AB_sq, dist_AC_sq, 0.1)
+        return ((dist_AB_sq - dist_AC_sq) / normalizer) ** 2
 
     return None
 

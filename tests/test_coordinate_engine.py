@@ -357,3 +357,135 @@ def test_add_on_circle_dist_constraints_does_not_duplicate():
     dist_for_a = [params for name, params in result if name == "dist" and params[1] == "A"]
 
     assert len(dist_for_a) == 1
+
+
+# ── Soft boolean penalty tests ──────────────────────────────────────────────
+
+
+def _make_code(func_name, *point_names):
+    coords = ",".join(f"coordinates['{p}']" for p in point_names)
+    return f"{func_name}(variables,{coords},coordinates)"
+
+
+def _make_coords(**pts):
+    return {name: (float(x), float(y)) for name, (x, y) in pts.items()}
+
+
+class TestIsPointInTriangleSoftResidual:
+    """Soft residual for is_point_in_triangle should be 0 inside, smooth outside."""
+
+    def test_zero_when_inside(self):
+        from geo.nelder_mead_engine import _constraint_contribution
+
+        coords = _make_coords(A=(0, 0), B=(2, 0), C=(1, 2), P=(1, 0.5))
+        code = _make_code("is_point_in_triangle", "A", "B", "C", "P")
+        assert _constraint_contribution(code, {}, coords, 1000) == 0.0
+
+    def test_positive_when_outside(self):
+        from geo.nelder_mead_engine import _constraint_contribution
+
+        coords = _make_coords(A=(0, 0), B=(2, 0), C=(1, 2), P=(5, 5))
+        code = _make_code("is_point_in_triangle", "A", "B", "C", "P")
+        residual = _constraint_contribution(code, {}, coords, 1000)
+        assert 0 < residual < 1000  # smooth, not BOOLEAN_PENALTY
+
+    def test_smooth_gradient_outside(self):
+        """Penalty should increase as P moves further outside."""
+        from geo.nelder_mead_engine import _constraint_contribution
+
+        code = _make_code("is_point_in_triangle", "A", "B", "C", "P")
+        coords_near = _make_coords(A=(0, 0), B=(2, 0), C=(1, 2), P=(2.1, 0))
+        coords_far = _make_coords(A=(0, 0), B=(2, 0), C=(1, 2), P=(4.0, 0))
+        r_near = _constraint_contribution(code, {}, coords_near, 1000)
+        r_far = _constraint_contribution(code, {}, coords_far, 1000)
+        assert r_far > r_near
+
+
+class TestIsPointOutTriangleSoftResidual:
+    """Soft residual for is_point_out_triangle should be 0 outside, positive inside."""
+
+    def test_zero_when_outside(self):
+        from geo.nelder_mead_engine import _constraint_contribution
+
+        coords = _make_coords(A=(0, 0), B=(2, 0), C=(1, 2), P=(5, 5))
+        code = _make_code("is_point_out_triangle", "A", "B", "C", "P")
+        assert _constraint_contribution(code, {}, coords, 1000) == 0.0
+
+    def test_positive_when_inside(self):
+        from geo.nelder_mead_engine import _constraint_contribution
+
+        coords = _make_coords(A=(0, 0), B=(2, 0), C=(1, 2), P=(1, 0.5))
+        code = _make_code("is_point_out_triangle", "A", "B", "C", "P")
+        residual = _constraint_contribution(code, {}, coords, 1000)
+        assert 0 < residual < 1000  # smooth, not BOOLEAN_PENALTY
+
+
+class TestIsAcuteTriangleSoftResidual:
+    """Soft residual for is_acute_triangle should be 0 when acute, positive when obtuse."""
+
+    def test_zero_for_acute(self):
+        from geo.nelder_mead_engine import _constraint_contribution
+
+        # Equilateral triangle: all angles 60°, definitely acute
+        coords = _make_coords(A=(0, 0), B=(1, 0), C=(0.5, 0.866))
+        code = _make_code("is_acute_triangle", "A", "B", "C")
+        assert _constraint_contribution(code, {}, coords, 1000) == 0.0
+
+    def test_positive_for_obtuse(self):
+        from geo.nelder_mead_engine import _constraint_contribution
+
+        # Very obtuse triangle: angle at B > 90°
+        coords = _make_coords(A=(0, 0), B=(0.1, 0), C=(1, 0.01))
+        code = _make_code("is_acute_triangle", "A", "B", "C")
+        residual = _constraint_contribution(code, {}, coords, 1000)
+        assert 0 < residual < 1000  # smooth, not BOOLEAN_PENALTY
+
+
+class TestAngleBisectorSoftResidual:
+    """Soft residual for angle_bisector should be 0 when angles are equal."""
+
+    def test_zero_when_bisecting(self):
+        from geo.nelder_mead_engine import _constraint_contribution
+
+        # AD bisects angle BAC: AB and AC are symmetric about AD
+        coords = _make_coords(
+            A=(0, 0), D=(1, 0), C=(1, 1), A_dup=(0, 0), B=(1, -1),
+        )
+        code = _make_code("angle_bisector", "A", "D", "C", "A_dup", "B")
+        residual = _constraint_contribution(code, {}, coords, 1000)
+        assert residual < 1e-6
+
+    def test_positive_when_not_bisecting(self):
+        from geo.nelder_mead_engine import _constraint_contribution
+
+        coords = _make_coords(
+            A=(0, 0), D=(1, 0.5), C=(1, 1), A_dup=(0, 0), B=(1, -1),
+        )
+        code = _make_code("angle_bisector", "A", "D", "C", "A_dup", "B")
+        residual = _constraint_contribution(code, {}, coords, 1000)
+        assert 0 < residual < 1000  # smooth, not BOOLEAN_PENALTY
+
+
+class TestOnlineInsideSoftResidual:
+    """online_inside should use smooth penalty instead of BOOLEAN_PENALTY."""
+
+    def test_small_penalty_when_slightly_outside_segment(self):
+        from geo.nelder_mead_engine import _constraint_contribution
+
+        # B is slightly past F on the line EF
+        coords = _make_coords(E=(0, 0), F=(1, 0), B=(1.1, 0))
+        code = _make_code("online_inside", "B", "E", "F")
+        residual = _constraint_contribution(code, {}, coords, 1000)
+        assert 0 < residual < 10  # Smooth, not BOOLEAN_PENALTY (1000)
+
+
+class TestArcMidpointSoftResidual:
+    """arc_midpoint soft residual should be 0 when AB == AC."""
+
+    def test_zero_when_equidistant(self):
+        from geo.nelder_mead_engine import _constraint_contribution
+
+        coords = _make_coords(A=(1, 0), B=(0, 1), C=(0, -1))
+        code = _make_code("arc_midpoint", "A", "B", "C")
+        residual = _constraint_contribution(code, {}, coords, 1000)
+        assert residual < 1e-6

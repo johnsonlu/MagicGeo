@@ -20,4 +20,9 @@ CONTINUOUS_CONSTRAINTS = frozenset({
     "online_inside",
     "online_extension",
     "parallel",
+    "is_point_in_triangle",
+    "is_point_out_triangle",
+    "is_acute_triangle",
+    "angle_bisector",
+    "arc_midpoint",
 })
