@@ -17,6 +17,7 @@ from geo.coordinate_engine_config import (
     COORDINATE_ENGINE_TIMEOUT,
     COORDINATE_HIGH,
     COORDINATE_LOW,
+    EARLY_EXIT_PENALTY,
     NELDER_MEAD_MAXITER,
     NELDER_MEAD_RESTARTS,
 )
@@ -62,12 +63,6 @@ def _calculate_angle_deg(v1, v2):
     return math.degrees(math.acos(cos_angle))
 
 
-def _slope(p1, p2):
-    if p2[0] == p1[0]:
-        return float("inf")
-    return (p2[1] - p1[1]) / (p2[0] - p1[0])
-
-
 def _constraint_residual(func_name, params, variables, coordinates):
     if func_name == "dist" and len(params) == 3:
         points = _resolve_points(variables, coordinates, params[:2])
@@ -76,7 +71,8 @@ def _constraint_residual(func_name, params, variables, coordinates):
         a, b = points
         target = params[2]
         actual = math.hypot(a[0] - b[0], a[1] - b[1])
-        return (actual - target) ** 2
+        normalizer = max(target, 0.1)
+        return ((actual - target) / normalizer) ** 2
 
     if func_name == "angle" and len(params) == 4:
         points = _resolve_points(variables, coordinates, params[:3])
@@ -87,7 +83,7 @@ def _constraint_residual(func_name, params, variables, coordinates):
         ab = (b[0] - a[0], b[1] - a[1])
         ac = (c[0] - a[0], c[1] - a[1])
         angle_deg = _calculate_angle_deg(ab, ac)
-        return (angle_deg - expected_angle) ** 2
+        return ((angle_deg - expected_angle) / 180) ** 2
 
     if func_name == "equal_line" and len(params) == 4:
         points = _resolve_points(variables, coordinates, params)
@@ -96,7 +92,8 @@ def _constraint_residual(func_name, params, variables, coordinates):
         a, b, c, d = points
         dist_ab_sq = (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2
         dist_cd_sq = (c[0] - d[0]) ** 2 + (c[1] - d[1]) ** 2
-        return (dist_ab_sq - dist_cd_sq) ** 2
+        normalizer = max(dist_ab_sq, dist_cd_sq, 0.1)
+        return ((dist_ab_sq - dist_cd_sq) / normalizer) ** 2
 
     if func_name == "line_ratio" and len(params) == 5:
         points = _resolve_points(variables, coordinates, params[:4])
@@ -106,7 +103,9 @@ def _constraint_residual(func_name, params, variables, coordinates):
         k = params[4]
         dist_ab_sq = (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2
         dist_fg_sq = (f[0] - g[0]) ** 2 + (f[1] - g[1]) ** 2
-        return (dist_fg_sq - dist_ab_sq * (k ** 2)) ** 2
+        expected = dist_ab_sq * (k ** 2)
+        normalizer = max(expected, 0.1)
+        return ((dist_fg_sq - expected) / normalizer) ** 2
 
     if func_name == "angle_relation" and len(params) == 7:
         points = _resolve_points(variables, coordinates, params[:6])
@@ -120,7 +119,7 @@ def _constraint_residual(func_name, params, variables, coordinates):
         ef = (f[0] - e[0], f[1] - e[1])
         angle_abc = _calculate_angle_deg(ba, bc)
         angle_def = _calculate_angle_deg(ed, ef)
-        return (angle_abc - ratio * angle_def) ** 2
+        return ((angle_abc - ratio * angle_def) / 180) ** 2
 
     if func_name == "ortho" and len(params) == 4:
         points = _resolve_points(variables, coordinates, params)
@@ -130,14 +129,19 @@ def _constraint_residual(func_name, params, variables, coordinates):
         ab = (b[0] - a[0], b[1] - a[1])
         ef = (f[0] - e[0], f[1] - e[1])
         dot_product = ab[0] * ef[0] + ab[1] * ef[1]
-        return dot_product ** 2
+        norm_ab = math.hypot(ab[0], ab[1])
+        norm_ef = math.hypot(ef[0], ef[1])
+        normalizer = max(norm_ab * norm_ef, 0.1)
+        return (dot_product / normalizer) ** 2
 
     if func_name in {"online", "online_inside", "online_extension"} and len(params) == 3:
         points = _resolve_points(variables, coordinates, params)
         if points is None:
             return None
         b, e, f = points
-        residual = point_to_line_distance(b, e, f) ** 2
+        line_len = math.hypot(f[0] - e[0], f[1] - e[1])
+        normalizer = max(line_len, 0.1)
+        residual = (point_to_line_distance(b, e, f) / normalizer) ** 2
         if func_name == "online":
             return residual
 
@@ -160,13 +164,12 @@ def _constraint_residual(func_name, params, variables, coordinates):
         if points is None:
             return None
         a, b, c, d = points
-        slope_ab = _slope(a, b)
-        slope_cd = _slope(c, d)
-        if math.isinf(slope_ab) and math.isinf(slope_cd):
-            return 0.0
-        if math.isinf(slope_ab) or math.isinf(slope_cd):
-            return BOOLEAN_PENALTY
-        return (slope_ab - slope_cd) ** 2
+        # Cross product of direction vectors: zero when parallel
+        cross = (b[0] - a[0]) * (d[1] - c[1]) - (b[1] - a[1]) * (d[0] - c[0])
+        norm_ab = math.hypot(b[0] - a[0], b[1] - a[1])
+        norm_cd = math.hypot(d[0] - c[0], d[1] - c[1])
+        normalizer = max(norm_ab * norm_cd, 0.1)
+        return (cross / normalizer) ** 2
 
     return None
 
@@ -264,11 +267,13 @@ def extract_and_modify_nelder_mead(coordinates, condition_code, variables):
         )
 
         candidate = _apply_values(variables, key_list, result.x)
-        penalty = _compute_penalty(condition_code, coordinates, candidate, BOOLEAN_PENALTY)
+        penalty = result.fun
         if _is_feasible(condition_code, coordinates, candidate) and penalty < best_penalty:
             best_penalty = penalty
             best_variables = candidate
             print(f"Restart {restart + 1}: feasible assignment (penalty={penalty:.6f})")
+            if penalty < EARLY_EXIT_PENALTY:
+                break
 
     if best_variables is not None:
         for key in variables:

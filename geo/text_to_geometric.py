@@ -181,6 +181,65 @@ def process_geometry_task(item, generic_knowledge, output_dir=None):
     except Exception as e:
         print(f"处理过程出错: {e}")
 
+def _has_tikz_body(processed_code):
+    """Check if processed LaTeX code contains actual TikZ drawing content."""
+    return "\\begin{tikzpicture}" in processed_code
+
+
+def _generate_tikz_fallback(text, fusion):
+    """Generate basic TikZ code from fusion dict when LLM fails."""
+    import math
+
+    lines = [
+        "\\usepackage{tikz}",
+        "\\usetikzlibrary{calc}",
+        "\\begin{document}",
+        "\\begin{tikzpicture}",
+    ]
+
+    # Define coordinates
+    for name, (x, y) in fusion.items():
+        lines.append(f"  \\coordinate ({name}) at ({x:.4f}, {y:.4f});")
+
+    lines.append("")
+
+    # Detect and draw circle if center O exists and points are equidistant
+    if "O" in fusion and ("⊙" in text or "圆" in text):
+        ox, oy = fusion["O"]
+        radii = {}
+        for name, (x, y) in fusion.items():
+            if name == "O":
+                continue
+            r = math.hypot(x - ox, y - oy)
+            if r > 0.01:
+                radii[name] = r
+        if radii:
+            avg_r = sum(radii.values()) / len(radii)
+            lines.append(f"  \\draw (O) circle ({avg_r:.4f});")
+
+    # Extract line segments from text: "连接OA，OB，AC，BC" etc.
+    connection_patterns = re.findall(r"连接((?:[A-Z]{2}[,，、]?)+)", text)
+    drawn_segments = set()
+    for group in connection_patterns:
+        pairs = re.findall(r"([A-Z])([A-Z])", group)
+        for a, b in pairs:
+            if a in fusion and b in fusion:
+                seg = tuple(sorted((a, b)))
+                drawn_segments.add(seg)
+
+    for a, b in drawn_segments:
+        lines.append(f"  \\draw ({a}) -- ({b});")
+
+    # Label points
+    lines.append("")
+    for name in fusion:
+        lines.append(f"  \\fill ({name}) circle (1.5pt) node[anchor=south] {{${name}$}};")
+
+    lines.append("\\end{tikzpicture}")
+    lines.append("\\end{document}")
+    return "\n".join(lines)
+
+
 def render_geometry_pdf(text, fusion, output_path):
     system_prompt = (
         "你是一个 LaTeX 绘图专家。根据给定的点坐标绘制几何图形。\n"
@@ -189,11 +248,21 @@ def render_geometry_pdf(text, fusion, output_path):
         "不要包含任何角度符号（°）。只输出 LaTeX 代码。"
     )
     user_content = f"题目：{text}\n坐标数据：{json.dumps(fusion)}"
-    
+
     latex_raw = call_llm(system_prompt, user_content)
+    final_code = None
     try:
         clean_code = get_latex_code(latex_raw)
         final_code = for_render_code(clean_code)
+    except Exception as e:
+        print(f"LLM LaTeX 解析失败: {e}")
+
+    # Fallback: if LLM returned empty/invalid TikZ, generate programmatically
+    if final_code is None or not _has_tikz_body(final_code):
+        print("[render] LLM TikZ body is empty, using programmatic fallback")
+        final_code = _generate_tikz_fallback(text, fusion)
+
+    try:
         render_latex_to_pdf(final_code, output_path)
         print(f"成功导出 PDF: {output_path}")
     except Exception as e:
