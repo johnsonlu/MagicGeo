@@ -1,3 +1,22 @@
-.venv/
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Environment
+.env
+
+# Output (generated PDFs and debug TXT)
+output/
+
+# IDE
+.idea/
+
+# macOS
+.DS_Store
+
+# Virtual environment
+.venv/
