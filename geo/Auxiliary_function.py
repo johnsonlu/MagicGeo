@@ -1,7 +1,56 @@
 import os
 import re
 from dotenv import load_dotenv
-from geo.Geometric_function import dist, angle, angle_bisector, equal_line,  ortho, online, midpoint,parallel,angle_relation,arc_midpoint, online_extension, online_inside, calc_var_from_dist, is_point_in_triangle, is_acute_triangle, is_point_out_triangle, line_ratio
+from geo.Geometric_function import (
+    dist,
+    angle,
+    angle_bisector,
+    equal_line,
+    ortho,
+    online,
+    midpoint,
+    parallel,
+    angle_relation,
+    arc_midpoint,
+    online_extension,
+    online_inside,
+    calc_var_from_dist,
+    is_point_in_triangle,
+    is_acute_triangle,
+    is_point_out_triangle,
+    line_ratio,
+    check_coordinates_distinct,
+    evaluate_radius_expression,
+    is_r_dependent_expression,
+    normalize_radius_symbol,
+)
+
+GEOMETRY_CONDITION_GLOBALS = {
+    "dist": dist,
+    "angle": angle,
+    "angle_bisector": angle_bisector,
+    "equal_line": equal_line,
+    "ortho": ortho,
+    "online": online,
+    "midpoint": midpoint,
+    "parallel": parallel,
+    "angle_relation": angle_relation,
+    "arc_midpoint": arc_midpoint,
+    "online_extension": online_extension,
+    "online_inside": online_inside,
+    "calc_var_from_dist": calc_var_from_dist,
+    "is_point_in_triangle": is_point_in_triangle,
+    "is_acute_triangle": is_acute_triangle,
+    "is_point_out_triangle": is_point_out_triangle,
+    "line_ratio": line_ratio,
+}
+
+
+def eval_geometry_condition(execute_code, variables, coordinates):
+    namespace = dict(GEOMETRY_CONDITION_GLOBALS)
+    namespace["variables"] = variables
+    namespace["coordinates"] = coordinates
+    return eval(execute_code, namespace)
 from openai import OpenAI
 
 load_dotenv()
@@ -65,6 +114,84 @@ def LLM_check(text,condition):
 
 
 
+def _split_point_names(group):
+    names = []
+    for segment in re.split(r"[,，、]", group):
+        segment = segment.strip()
+        if not segment:
+            continue
+        if len(segment) > 1 and segment.isalpha() and segment.isupper():
+            names.extend(list(segment))
+        else:
+            names.append(segment)
+    return names
+
+
+_ON_CIRCLE_PATTERNS = (
+    re.compile(r"点([A-Z](?:、[A-Z])*)在[⊙]?O上"),
+    re.compile(r"([A-Z](?:[,，、][A-Z])*)是[⊙]?O上的(?:点|三点|不同的三点)"),
+    re.compile(r"([A-Z])是[⊙]?O上一点"),
+    re.compile(r"([A-Z])为圆上一点"),
+    re.compile(r"点([A-Z])在(?:劣弧|优弧|弧)"),
+    re.compile(r"([A-Z])在弧"),
+    re.compile(r"三角形([A-Z]{3})内接于"),
+    re.compile(r"四边形\s*([A-Z]{4})内接于"),
+    re.compile(r"圆内接四边形([A-Z]{4})"),
+    re.compile(r"正五边形([A-Z]{5})内接于"),
+    re.compile(r"([A-Z]{2})是[⊙]?O的直径"),
+    re.compile(r"([A-Z]{2})是[⊙]?O的半径"),
+)
+_OUTSIDE_CIRCLE_PATTERN = re.compile(r"点([A-Z])是[⊙]?O外")
+
+
+def _extract_on_circle_points(text):
+    if not re.search(r"[⊙]?O|圆", text):
+        return set()
+
+    outside_points = set(_OUTSIDE_CIRCLE_PATTERN.findall(text))
+    on_circle = set()
+    for pattern in _ON_CIRCLE_PATTERNS:
+        for match in pattern.finditer(text):
+            on_circle.update(_split_point_names(match.group(1)))
+
+    return on_circle - outside_points
+
+
+def _has_dist_on_circle(conditions, center, point):
+    for function_name, params in conditions:
+        if function_name != "dist" or len(params) < 3:
+            continue
+        if params[0] == center and params[1] == point:
+            return True
+    return False
+
+
+def add_on_circle_dist_constraints(text, coordinates, conditions, radius=None):
+    if "O" not in coordinates:
+        return conditions
+
+    dist_target = "r"
+    if radius is not None:
+        dist_target = str(radius)
+
+    added = []
+    for point in sorted(_extract_on_circle_points(text)):
+        if point == "O" or point not in coordinates:
+            continue
+        if _has_dist_on_circle(conditions, "O", point):
+            continue
+        params = ["O", point, dist_target]
+        if not check_function_format("dist", params, radius):
+            continue
+        conditions.append(["dist", params])
+        added.append(point)
+
+    if added:
+        print(f"\n added on-circle dist constraints for: {', '.join(added)}\n")
+
+    return conditions
+
+
 def _parse_conditions_text(conditions_str, radius=None):
     conditions = []
     calculate_point_conditions = []
@@ -117,6 +244,10 @@ def convert_conditions(text, variables, coordinates, conditions_data, radius=Non
             print("\n check with LLM, delete condition:\n")
             print(cond)
 
+    conditions = add_on_circle_dist_constraints(
+        text, coordinates, conditions, radius=radius
+    )
+
                 
 # delete conditions that have already satisfied.
     conditions_excute = []
@@ -146,7 +277,9 @@ def convert_conditions(text, variables, coordinates, conditions_data, radius=Non
 
         try:
             # 尝试执行条件代码
-            is_satisfied, is_calculate = eval(excute_code)
+            is_satisfied, is_calculate = eval_geometry_condition(
+                excute_code, variables, coordinates
+            )
             if is_calculate:
                 if is_satisfied:
                     conditions.remove(cond)
@@ -188,16 +321,33 @@ def convert_conditions(text, variables, coordinates, conditions_data, radius=Non
 
 """利用对应格式的字典生成变量"""
 def convert_coordinates(coordinates, radius=None):
+    def register_radius_variable():
+        if "r" not in variable_names:
+            variable_names["r"] = [0, False]
+
     def parse_value(value):
-        if value == 'r':
-            return radius if radius is not None else 1.0, False
-        elif value == '-r':
-            return -radius if radius is not None else -1.0, False
-        else:
-            try:
-                return float(value), False
-            except ValueError:
-                return value, True
+        value = normalize_radius_symbol(value)
+        if value == "r":
+            if radius is not None:
+                return radius, False
+            register_radius_variable()
+            return "r", True
+        if value == "-r":
+            if radius is not None:
+                return -radius, False
+            register_radius_variable()
+            return "-r", True
+        if is_r_dependent_expression(value):
+            if radius is not None:
+                return evaluate_radius_expression(value, radius), False
+            register_radius_variable()
+            return value, True
+        try:
+            return float(value), False
+        except ValueError:
+            if value not in variable_names:
+                variable_names[value] = [0, False]
+            return value, True
 
     converted_coords = {}
     variable_names = {}
@@ -206,20 +356,14 @@ def convert_coordinates(coordinates, radius=None):
         if isinstance(value, (tuple, list)):
             coord_value = []
             for v in value:
-                parsed, is_string = parse_value(str(v).strip())
-                if is_string:
-                    if parsed not in variable_names:
-                        variable_names[parsed] = [0, False]
+                parsed, _is_string = parse_value(str(v).strip())
                 coord_value.append(parsed)
             converted_coords[key] = tuple(coord_value)
         else:
             parts = value.split(',')
             coord_value = []
             for part in parts:
-                parsed, is_string = parse_value(part.strip())
-                if is_string:
-                    if parsed not in variable_names:
-                        variable_names[parsed] = [0, False]
+                parsed, _is_string = parse_value(part.strip())
                 coord_value.append(parsed)
             converted_coords[key] = tuple(coord_value)
 
@@ -346,7 +490,9 @@ def check_condition_break(condition_code,coordinates,variables):
     for excute_code in condition_code:
         try:
             # 尝试执行条件代码
-            is_satisfied, is_calculate = eval(excute_code)
+            is_satisfied, is_calculate = eval_geometry_condition(
+                excute_code, variables, coordinates
+            )
             if is_calculate:
                 if not is_satisfied:
                     # print(excute_code)
@@ -356,6 +502,8 @@ def check_condition_break(condition_code,coordinates,variables):
             # print(excute_code)
             print(f"不能执行条件代码 {excute_code} in check_condition_break")
             return True
+    if not check_coordinates_distinct(coordinates, variables):
+        return True
     return False
 
 

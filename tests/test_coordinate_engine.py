@@ -165,6 +165,61 @@ def test_coordinate_engine_routes_to_nelder_mead(monkeypatch, fast_nelder_mead_e
     assert_feasible(condition_code, coordinates, result_variables)
 
 
+def _resolved_point(coordinates, variables, point):
+    x, y = coordinates[point]
+    if isinstance(x, str):
+        x = variables[x][0]
+    if isinstance(y, str):
+        y = variables[y][0]
+    return float(x), float(y)
+
+
+@pytest.mark.parametrize("engine", ["brute_force", "nelder_mead"])
+def test_angle_bisector_rejects_overlapping_points(
+    monkeypatch, engine, fast_nelder_mead_env
+):
+    coordinates = {
+        "O": (0.0, 0.0),
+        "A": (1.0, 0.0),
+        "B": (-1.0, 0.0),
+        "C": ("cx", "cy"),
+        "D": ("dx", "dy"),
+    }
+    variables = {
+        "cx": [0.0, False],
+        "cy": [0.0, False],
+        "dx": [0.0, False],
+        "dy": [0.0, False],
+    }
+    condition_code = [
+        _dist_code("O", "C", 1.0),
+        _dist_code("O", "D", 1.0),
+        (
+            "angle_relation(variables,coordinates['A'],coordinates['O'],"
+            "coordinates['D'],coordinates['D'],coordinates['O'],"
+            "coordinates['C'],1.0,coordinates)"
+        ),
+    ]
+
+    extract_and_modify = reload_extract_and_modify(
+        monkeypatch,
+        COORDINATE_ENGINE=engine,
+        **fast_nelder_mead_env,
+    )
+    _, result_variables, found = extract_and_modify(
+        coordinates, condition_code, variables.copy()
+    )
+
+    assert found is True
+    assert_feasible(condition_code, coordinates, result_variables)
+
+    cx, cy = _resolved_point(coordinates, result_variables, "C")
+    ax, ay = _resolved_point(coordinates, result_variables, "A")
+    bx, by = _resolved_point(coordinates, result_variables, "B")
+    assert math.hypot(cx - ax, cy - ay) >= 0.1
+    assert math.hypot(cx - bx, cy - by) >= 0.1
+
+
 def test_coordinate_engine_defaults_to_brute_force(monkeypatch):
     coordinates = {"A": (0.0, 0.0), "B": ("a", "b")}
     variables = {"a": [0.0, False], "b": [0.0, False]}
@@ -177,3 +232,128 @@ def test_coordinate_engine_defaults_to_brute_force(monkeypatch):
 
     assert found is True
     assert_feasible(condition_code, coordinates, result_variables)
+
+
+def _circle_problem_5_condition_code():
+    return [
+        "arc_midpoint(variables,coordinates['C'],coordinates['A'],coordinates['B'],coordinates)",
+        _angle_code("B", "A", "C", 35),
+        _angle_code("A", "O", "B", 140),
+    ]
+
+
+def test_convert_coordinates_collapses_radius_expressions():
+    from geo.Auxiliary_function import convert_coordinates
+
+    points = {
+        "O": [0, 0],
+        "A": ["R", 0],
+        "B": ["-R*cos(40*pi/180)", "R*sin(40*pi/180)"],
+        "C": ["R*cos(70*pi/180)", "R*sin(70*pi/180)"],
+    }
+    coordinates, variables = convert_coordinates(points, radius=1.0)
+
+    assert variables == {}
+    assert coordinates["A"] == (1.0, 0.0)
+    assert abs(coordinates["B"][0] - (-math.cos(40 * math.pi / 180))) < 1e-9
+    assert abs(coordinates["B"][1] - math.sin(40 * math.pi / 180)) < 1e-9
+
+
+@pytest.mark.parametrize("engine", ["brute_force", "nelder_mead"])
+def test_circle_problem_5_radius_expressions_find_solution(
+    monkeypatch, engine, fast_nelder_mead_env
+):
+    from geo.Auxiliary_function import convert_coordinates
+
+    points = {
+        "O": [0, 0],
+        "A": ["R", 0],
+        "B": ["-R*cos(40*pi/180)", "R*sin(40*pi/180)"],
+        "C": ["R*cos(70*pi/180)", "R*sin(70*pi/180)"],
+    }
+    coordinates, variables = convert_coordinates(points, radius=None)
+    condition_code = _circle_problem_5_condition_code()
+
+    assert list(variables.keys()) == ["r"]
+
+    extract_and_modify = reload_extract_and_modify(
+        monkeypatch,
+        COORDINATE_ENGINE=engine,
+        **fast_nelder_mead_env,
+    )
+    _, result_variables, found = extract_and_modify(
+        coordinates, condition_code, variables.copy()
+    )
+
+    assert found is True
+    assert_feasible(condition_code, coordinates, result_variables)
+
+
+def test_arc_midpoint_penalty_is_zero_when_satisfied():
+    import math
+
+    from geo.Auxiliary_function import convert_coordinates
+    from geo.coordinate_engine_config import BOOLEAN_PENALTY
+    from geo.nelder_mead_engine import _compute_penalty
+
+    points = {
+        "O": [0, 0],
+        "A": ["R", 0],
+        "B": ["-R*cos(40*pi/180)", "R*sin(40*pi/180)"],
+        "C": ["R*cos(70*pi/180)", "R*sin(70*pi/180)"],
+    }
+    coordinates, variables = convert_coordinates(points, radius=1.0)
+    condition_code = _circle_problem_5_condition_code()
+
+    penalty = _compute_penalty(condition_code, coordinates, variables, BOOLEAN_PENALTY)
+    assert penalty < 1e-6
+
+
+def test_extract_on_circle_points_from_problem_5_text():
+    from geo.Auxiliary_function import _extract_on_circle_points
+
+    text = "已知点A、B、C在⊙O上，C为弧AB的中点.∠BAC=35°，∠AOB=140°"
+    assert _extract_on_circle_points(text) == {"A", "B", "C"}
+
+
+def test_extract_on_circle_points_skips_outside_point():
+    from geo.Auxiliary_function import _extract_on_circle_points
+
+    text = "点A是⊙O外一点，AB与⊙O相切于点B"
+    assert "A" not in _extract_on_circle_points(text)
+    assert "B" not in _extract_on_circle_points(text)
+
+
+def test_add_on_circle_dist_constraints_for_problem_5():
+    from geo.Auxiliary_function import add_on_circle_dist_constraints
+
+    text = "已知点A、B、C在⊙O上，C为弧AB的中点.∠BAC=35°，∠AOB=140°"
+    coordinates = {
+        "O": (0.0, 0.0),
+        "A": ("r", 0.0),
+        "B": ("-r*cos(40*pi/180)", "r*sin(40*pi/180)"),
+        "C": ("r*cos(70*pi/180)", "r*sin(70*pi/180)"),
+    }
+    conditions = [
+        ["arc_midpoint", ["C", "A", "B"]],
+        ["angle", ["B", "A", "C", 35.0]],
+    ]
+
+    result = add_on_circle_dist_constraints(text, coordinates, conditions, radius=1.0)
+
+    dist_points = {params[1] for name, params in result if name == "dist"}
+    assert dist_points == {"A", "B", "C"}
+    assert all(params[2] == 1.0 for name, params in result if name == "dist")
+
+
+def test_add_on_circle_dist_constraints_does_not_duplicate():
+    from geo.Auxiliary_function import add_on_circle_dist_constraints
+
+    text = "点A，B，C在⊙O上"
+    coordinates = {"O": (0.0, 0.0), "A": ("r", 0.0), "B": (0.0, "r"), "C": ("a", "b")}
+    conditions = [["dist", ["O", "A", 1.0]]]
+
+    result = add_on_circle_dist_constraints(text, coordinates, conditions, radius=1.0)
+    dist_for_a = [params for name, params in result if name == "dist" and params[1] == "A"]
+
+    assert len(dist_for_a) == 1

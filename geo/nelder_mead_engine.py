@@ -5,8 +5,12 @@ import time
 import numpy as np
 from scipy.optimize import minimize
 
-from geo.Auxiliary_function import check_condition_break
-from geo.Geometric_function import check_is_calculate, point_to_line_distance
+from geo.Auxiliary_function import check_condition_break, eval_geometry_condition
+from geo.Geometric_function import (
+    POINT_CLOSE_TOLERANCE,
+    check_is_calculate,
+    point_to_line_distance,
+)
 from geo.coordinate_engine_config import (
     BOOLEAN_PENALTY,
     CONTINUOUS_CONSTRAINTS,
@@ -179,7 +183,9 @@ def _constraint_contribution(execute_code, variables, coordinates, boolean_penal
         return residual
 
     try:
-        is_satisfied, is_calculate = eval(execute_code)
+        is_satisfied, is_calculate = eval_geometry_condition(
+            execute_code, variables, coordinates
+        )
         if is_calculate and not is_satisfied:
             return boolean_penalty
     except Exception:
@@ -187,10 +193,33 @@ def _constraint_contribution(execute_code, variables, coordinates, boolean_penal
     return 0.0
 
 
+def _coordinates_distinct_penalty(coordinates, variables, boolean_penalty):
+    resolved = []
+    for ref in coordinates.values():
+        is_calculate, point_list = check_is_calculate(variables, [ref], coordinates)
+        if not is_calculate:
+            return 0.0
+        resolved.append(point_list[0])
+
+    penalty = 0.0
+    for i in range(len(resolved)):
+        for j in range(i + 1, len(resolved)):
+            gap = math.hypot(
+                resolved[i][0] - resolved[j][0],
+                resolved[i][1] - resolved[j][1],
+            )
+            if gap < POINT_CLOSE_TOLERANCE:
+                penalty += ((POINT_CLOSE_TOLERANCE - gap) / POINT_CLOSE_TOLERANCE) ** 2
+    return penalty * boolean_penalty
+
+
 def _compute_penalty(condition_code, coordinates, variables, boolean_penalty):
-    return sum(
+    constraint_penalty = sum(
         _constraint_contribution(code, variables, coordinates, boolean_penalty)
         for code in condition_code
+    )
+    return constraint_penalty + _coordinates_distinct_penalty(
+        coordinates, variables, boolean_penalty
     )
 
 

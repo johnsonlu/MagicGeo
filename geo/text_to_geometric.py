@@ -107,12 +107,18 @@ def process_geometry_task(item, generic_knowledge, output_dir=None):
         "根据数学几何题意和辅助信息，输出 JSON，包含以下两个字段：\n"
         "1. coordinates: 字典，键为点名称，值为 [x, y] 数组（已知用数字，未知用变量名）\n"
         "2. conditions: 字典，键为条件编号，值为 [函数名, 参数1, 参数2, ...] 数组\n"
-        "示例：{\"coordinates\": {\"A\": [0, 0], \"B\": [\"a\", \"b\"]}, \"conditions\": {\"c1\": [\"dist\", \"O\", \"A\", \"r\"]}}"
+        "3. 若题目明确点在某圆（⊙O）上，除角度/弧中点等条件外，还必须为每个圆上点添加 "
+        "'dist': ['dist', 'O', '点名称', 'r']（半径用 r，与坐标中的 r 一致）\n"
+        "示例：{\"coordinates\": {\"O\": [0, 0], \"A\": [\"r\", 0], \"B\": [\"a\", \"b\"]}, "
+        "\"conditions\": {\"c1\": [\"dist\", \"O\", \"A\", \"r\"], \"c2\": [\"angle\", \"B\", \"A\", \"C\", 35]}}"
     )
 
     full_prompt = f"{generic_knowledge}\n\n当前题目辅助背景：{extra_info}"
     user_msg = f"题目:{text}\n任务:{instruct}"
+    print(full_prompt)
+    print(user_msg)
     result = call_llm(full_prompt, user_msg, response_format="json")
+    print(result)
 
     if not result:
         print("LLM 解析失败")

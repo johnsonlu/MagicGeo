@@ -12,7 +12,7 @@
     {
         "id": 2,
         "type": "圆",
-        "subject": "OA是⊙O的半径，BC是⊙O的弦，OA⊥BC于点 D，AE与⊙O相切于点A，AE交OC的延长线于点E.∠AOC=45°，BC=0.2，AE=0.14，圆的半径为0.14"
+        "subject": "已知：三角形ABC外接于⊙O，∠BAC=60°，AE⊥BC，CF⊥AB，AE、CF相交于点H，点D为弧BC的中点，连接HD、AD"
     },
     {
         "id": 3,

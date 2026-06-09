@@ -1,4 +1,40 @@
 import math
+import re
+
+_RADIUS_SYMBOL_RE = re.compile(r"\bR\b")
+_R_DEPENDENT_RE = re.compile(r"^-?r(?:[\*/]|$)")
+_RADIUS_EXPR_EVAL_GLOBALS = {"__builtins__": {}}
+for _name in ("pi", "cos", "sin", "sqrt", "tan"):
+    _RADIUS_EXPR_EVAL_GLOBALS[_name] = getattr(math, _name)
+
+
+def normalize_radius_symbol(value):
+    return _RADIUS_SYMBOL_RE.sub("r", str(value).strip())
+
+
+def is_r_dependent_expression(value):
+    normalized = normalize_radius_symbol(value)
+    return bool(_R_DEPENDENT_RE.match(normalized))
+
+
+def evaluate_radius_expression(expr, radius_value):
+    normalized = normalize_radius_symbol(expr)
+    env = dict(_RADIUS_EXPR_EVAL_GLOBALS)
+    env["r"] = radius_value
+    return float(eval(normalized, env))
+
+
+def resolve_coord_string(value, variables):
+    if value in variables:
+        if not variables[value][1]:
+            return None, False
+        return variables[value][0], True
+    if is_r_dependent_expression(value):
+        if "r" not in variables or not variables["r"][1]:
+            return None, False
+        return evaluate_radius_expression(value, variables["r"][0]), True
+    return None, False
+
 
 def check_is_calculate(variables,point_list,coordinates):
 
@@ -11,22 +47,25 @@ def check_is_calculate(variables,point_list,coordinates):
         else:
             point = [point_list[i][0], point_list[i][1]]
             if isinstance(point_list[i][0], str):
-                is_calculate = variables[point_list[i][0]][1]
+                resolved, is_calculate = resolve_coord_string(point_list[i][0], variables)
                 if not is_calculate:
-                    return is_calculate,point_list
-                point[0] = variables[point_list[i][0]][0]
+                    return is_calculate, point_list
+                point[0] = resolved
             if isinstance(point_list[i][1], str):
-                is_calculate = variables[point_list[i][1]][1]
+                resolved, is_calculate = resolve_coord_string(point_list[i][1], variables)
                 if not is_calculate:
-                    return is_calculate,point_list
-                point[1] = variables[point_list[i][1]][0]
+                    return is_calculate, point_list
+                point[1] = resolved
             point_list[i] = point
     return is_calculate,point_list
+
+POINT_CLOSE_TOLERANCE = 0.1
+
 
 def check_point_different(point_list):
     point_num = len(point_list)
     point = point_list[0]
-    close_tolerance = 0.1
+    close_tolerance = POINT_CLOSE_TOLERANCE
     for i in range(1, point_num):
         # 检查 AB 和 CD 的端点是否相近
         if (abs(point[0] - point_list[i][0]) < close_tolerance and abs(point[1] - point_list[i][1]) < close_tolerance):
@@ -35,6 +74,16 @@ def check_point_different(point_list):
         return True
     else:
         return check_point_different(point_list[1:])
+
+
+def check_coordinates_distinct(coordinates, variables):
+    point_list = []
+    for ref in coordinates.values():
+        is_calculate, resolved = check_is_calculate(variables, [ref], coordinates)
+        if not is_calculate:
+            return True
+        point_list.append(resolved[0])
+    return check_point_different(point_list)
 
 
 def dist(variables,A, B, r,coordinates):
