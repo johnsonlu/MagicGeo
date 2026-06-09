@@ -1,3 +1,4 @@
+import re
 import tkinter as tk
 from tkinter import ttk
 from pdf2image import convert_from_path
@@ -17,19 +18,37 @@ def get_latex_code(user_input):
 
 
 def for_render_code(latex_code):
-    # Ensure \usepackage{tikz} is included
+    # Matplotlib's PGF backend injects its own \documentclass.
+    latex_code = re.sub(r"\\documentclass(?:\[[^\]]*\])?\{[^}]+\}\s*", "", latex_code)
+
     if "\\usepackage{tikz}" not in latex_code:
         latex_code = "\\usepackage{tikz}\n" + latex_code
 
-    # Ensure \usetikzlibrary{calc} is included
     if "\\usetikzlibrary{calc}" not in latex_code:
-        latex_code = latex_code.replace("\\usepackage{tikz}", "\\usepackage{tikz}\n\\usetikzlibrary{calc}")
+        latex_code = latex_code.replace(
+            "\\usepackage{tikz}",
+            "\\usepackage{tikz}\n\\usetikzlibrary{calc}",
+        )
 
-    start_index = latex_code.find("\\usepackage{tikz}")
-    end_index = latex_code.find("\\end{document}") + len('\\end{document}')
-    latex_code = latex_code[start_index:end_index]
+    if "\\begin{document}" in latex_code:
+        preamble, body = latex_code.split("\\begin{document}", 1)
+    else:
+        draw_start = re.search(r"\\begin\{(?:tikzpicture|pgfpicture)\}", latex_code)
+        if draw_start:
+            preamble, body = latex_code[: draw_start.start()], latex_code[draw_start.start() :]
+        else:
+            preamble, body = latex_code, ""
 
-    return latex_code
+    body = body.replace("\\end{document}", "").strip()
+    preamble = preamble.strip()
+    tikz_index = preamble.find("\\usepackage{tikz}")
+    if tikz_index != -1:
+        preamble = preamble[tikz_index:]
+
+    if not body:
+        return preamble
+
+    return f"{preamble}\n\\begin{{document}}\n{body}\n\\end{{document}}"
 
 
 def write_latex_debug(latex_code, output_path):

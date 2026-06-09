@@ -80,9 +80,9 @@ def _constraint_residual(func_name, params, variables, coordinates):
             return None
         b, a, c = points
         expected_angle = params[3]
-        ba = (a[0] - b[0], a[1] - b[1])
-        bc = (c[0] - b[0], c[1] - b[1])
-        angle_deg = _calculate_angle_deg(ba, bc)
+        ab = (b[0] - a[0], b[1] - a[1])
+        ac = (c[0] - a[0], c[1] - a[1])
+        angle_deg = _calculate_angle_deg(ab, ac)
         return (angle_deg - expected_angle) ** 2
 
     if func_name == "equal_line" and len(params) == 4:
