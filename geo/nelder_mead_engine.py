@@ -237,6 +237,16 @@ def _is_feasible(condition_code, coordinates, variables):
     return not check_condition_break(condition_code, coordinates, variables)
 
 
+def _resolve_known_points(coordinates):
+    """Return list of (x, y) for coordinates with fully known numeric values."""
+    resolved = []
+    for ref in coordinates.values():
+        x, y = ref
+        if not isinstance(x, str) and not isinstance(y, str):
+            resolved.append((float(x), float(y)))
+    return resolved
+
+
 def extract_and_modify_nelder_mead(coordinates, condition_code, variables):
     key_list = list(variables.keys())
     if not key_list:
@@ -249,8 +259,14 @@ def extract_and_modify_nelder_mead(coordinates, condition_code, variables):
     deadline = time.monotonic() + COORDINATE_ENGINE_TIMEOUT
     best_variables = None
     best_penalty = float("inf")
+    best_x = None
+    known_points = _resolve_known_points(coordinates)
+    centroid_x = sum(p[0] for p in known_points) / len(known_points) if known_points else 0.0
+    centroid_y = sum(p[1] for p in known_points) / len(known_points) if known_points else 0.0
+    n_vars = len(key_list)
 
     def objective(values):
+        values = np.clip(values, COORDINATE_LOW, COORDINATE_HIGH)
         state = _apply_values(variables, key_list, values)
         return _compute_penalty(condition_code, coordinates, state, BOOLEAN_PENALTY)
 
@@ -258,7 +274,27 @@ def extract_and_modify_nelder_mead(coordinates, condition_code, variables):
         if time.monotonic() >= deadline:
             break
 
-        x0 = rng.uniform(COORDINATE_LOW, COORDINATE_HIGH, size=len(key_list))
+        # Seed strategy: geometric for first 2 (if centroid is away from origin),
+        # then adaptive/random mix
+        use_geometric = (
+            restart < 2
+            and known_points
+            and math.hypot(centroid_x, centroid_y) > 0.3
+        )
+        if use_geometric:
+            x0 = np.empty(n_vars)
+            for i in range(n_vars):
+                if i % 2 == 0:
+                    x0[i] = centroid_x + rng.normal(0, 0.3)
+                else:
+                    x0[i] = centroid_y + rng.normal(0, 0.3)
+            x0 = np.clip(x0, COORDINATE_LOW, COORDINATE_HIGH)
+        elif best_x is not None and rng.random() < 0.7:
+            x0 = best_x + rng.normal(0, 0.3, size=n_vars)
+            x0 = np.clip(x0, COORDINATE_LOW, COORDINATE_HIGH)
+        else:
+            x0 = rng.uniform(COORDINATE_LOW, COORDINATE_HIGH, size=n_vars)
+
         result = minimize(
             objective,
             x0,
@@ -267,12 +303,18 @@ def extract_and_modify_nelder_mead(coordinates, condition_code, variables):
         )
 
         candidate = _apply_values(variables, key_list, result.x)
-        penalty = result.fun
-        if _is_feasible(condition_code, coordinates, candidate) and penalty < best_penalty:
-            best_penalty = penalty
+        raw_penalty = result.fun
+        improved = raw_penalty < best_penalty
+        feasible = _is_feasible(condition_code, coordinates, candidate)
+
+        if improved:
+            best_penalty = raw_penalty
+            best_x = result.x.copy()
+
+        if feasible and improved:
             best_variables = candidate
-            print(f"Restart {restart + 1}: feasible assignment (penalty={penalty:.6f})")
-            if penalty < EARLY_EXIT_PENALTY:
+            print(f"Restart {restart + 1}: feasible assignment (penalty={raw_penalty:.6f})")
+            if raw_penalty < EARLY_EXIT_PENALTY:
                 break
 
     if best_variables is not None:
