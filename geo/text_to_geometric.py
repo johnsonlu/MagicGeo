@@ -9,7 +9,7 @@ from openai import OpenAI
 
 load_dotenv()
 
-from geo.Auxiliary_function import parse_points_info, convert_coordinates, extract_info, convert_conditions
+from geo.Auxiliary_function import convert_coordinates, convert_conditions
 from geo.Kernel_function import extract_and_modify
 from geo.latex_pdf_open import get_latex_code, for_render_code, render_latex_to_pdf
 
@@ -29,22 +29,27 @@ MODEL_NAME = os.getenv("MODEL_NAME", "deepseek-v4-flash")
 
 # ================= 核心工具函数 =================
 
-def call_llm(system_prompt, user_content, temperature=0.0):
-    """通用 LLM 调用接口"""
+def call_llm(system_prompt, user_content, temperature=0.0, response_format=None):
     try:
-        response = client.chat.completions.create(
+        kwargs = dict(
             model=MODEL_NAME,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_content},
             ],
             temperature=temperature,
-            stream=False
+            stream=False,
         )
-        return response.choices[0].message.content.strip()
+        if response_format == "json":
+            kwargs["response_format"] = {"type": "json_object"}
+        response = client.chat.completions.create(**kwargs)
+        text = response.choices[0].message.content.strip()
+        if response_format == "json":
+            return json.loads(text)
+        return text
     except Exception as e:
         print(f"LLM 调用失败: {e}")
-        return ""
+        return {} if response_format == "json" else ""
 
 def analyze_geometry_context(text):
     system_prompt = (
@@ -52,26 +57,21 @@ def analyze_geometry_context(text):
         "1. type: 图形类型(circle/triangle/quad/mixed)\n"
         "2. radius: 如果涉及圆，提取半径数值；如果不确定但有半径概念，设为 1.0；否则为 null\n"
         "3. suggestions: 针对该图形的坐标设置建议（例如：'设圆心O为(0,0)', '设A为(0,0)'）\n"
-        "4. is_circle: 布尔值，是否包含圆\n"
-        "只输出 JSON，不要回复其他文字。"
+        "4. is_circle: 布尔值，是否包含圆"
     )
-    
-    res = call_llm(system_prompt, f"题目内容：{text}")
-    try:
-        clean_json = re.sub(r'```json\n|\n```', '', res)
-        analysis = json.loads(clean_json)
-        
-        radius = analysis.get('radius')
-        # 如果是圆且没提取到具体数值，给定默认基准半径 1.0
-        if analysis.get('is_circle') and radius is None:
-            radius = 1.0
-            
-        extra_info = f"类型：{analysis.get('type')}。建议：{analysis.get('suggestions')}"
-        return extra_info, radius
-    except:
+
+    analysis = call_llm(system_prompt, f"题目内容：{text}", response_format="json")
+    if not analysis:
         r_match = re.search(r"半径[为是等于]?\s*([0-9.]+)", text)
         radius = float(r_match.group(1)) if r_match else (5.0 if "圆" in text or "⊙" in text else None)
         return "类型判断失败，请根据常识设置坐标", radius
+
+    radius = analysis.get('radius')
+    if analysis.get('is_circle') and radius is None:
+        radius = 1.0
+
+    extra_info = f"类型：{analysis.get('type')}。建议：{analysis.get('suggestions')}"
+    return extra_info, radius
 
 def calcmidpoint(A, B):
     return ((A[0] + B[0]) / 2, (A[1] + B[1]) / 2)
@@ -103,30 +103,24 @@ def process_geometry_task(item, generic_knowledge, output_dir=None):
     print(f"[感知结果] 半径: {radius}, 辅助建议: {extra_info}")
 
     instruct = (
-        "根据数学几何题意和辅助信息，执行以下任务：\n"
-        "1. 列出所有点的坐标表示（优先使用已知常数，未知用变量，禁止包含角度标记）。\n"
-        "2. 列出所有几何约束条件，每个条件单独一行。\n"
-        "输出格式必须严格为（元素间用换行分隔，不要用逗号）：\n"
-        "坐标：\n{'A':(x,y)\n'B':(a,b)}\n"
-        "条件：\n{'c1': dist(O, A, r)\n'c2': angle(A, B, C, 25)}"
+        "根据数学几何题意和辅助信息，输出 JSON，包含以下两个字段：\n"
+        "1. coordinates: 字典，键为点名称，值为 [x, y] 数组（已知用数字，未知用变量名）\n"
+        "2. conditions: 字典，键为条件编号，值为 [函数名, 参数1, 参数2, ...] 数组\n"
+        "示例：{\"coordinates\": {\"A\": [0, 0], \"B\": [\"a\", \"b\"]}, \"conditions\": {\"c1\": [\"dist\", \"O\", \"A\", \"r\"]}}"
     )
 
-    # 获取坐标与条件解析 
     full_prompt = f"{generic_knowledge}\n\n当前题目辅助背景：{extra_info}"
     user_msg = f"题目:{text}\n任务:{instruct}"
-    response_text = call_llm(full_prompt, user_msg)
-    
-    if not response_text: 
+    result = call_llm(full_prompt, user_msg, response_format="json")
+
+    if not result:
         print("LLM 解析失败")
         return
-    
-    coord_info, cond_info = extract_info(response_text)
-    points_info = parse_points_info(coord_info)
-    
-    # 转换坐标与变量 
+
+    points_info = result.get("coordinates", {})
+    cond_info = result.get("conditions", {})
+
     generated_points, variables = convert_coordinates(points_info, radius=radius)
-    
-    # 转换约束条件
     generated_points, variables, calc_cond, condition_code = convert_conditions(
         text, variables, generated_points, cond_info, radius=radius
     )

@@ -65,16 +65,7 @@ def LLM_check(text,condition):
 
 
 
-def convert_conditions(text,variables,coordinates,conditions_str, radius=None):
-    """
-    从给定的字符串中解析条件信息，并生成一个列表 conditions。
-
-    参数：
-    conditions_str -- 包含条件信息的字符串，每行一个条件
-
-    返回值：
-    返回一个列表，其中每个元素是一个元组，包含条件类型（'angle' 或 'dist'）和对应的参数
-    """
+def _parse_conditions_text(conditions_str, radius=None):
     conditions = []
     calculate_point_conditions = []
     lines = conditions_str.strip().split('\n')
@@ -82,7 +73,6 @@ def convert_conditions(text,variables,coordinates,conditions_str, radius=None):
     for line in lines:
         if not line.strip():
             continue
-        # handle comma-separated conditions on one line
         parts = re.split(r",(?=\s*')", line.strip())
         for part in parts:
             part = part.strip().rstrip(',')
@@ -91,11 +81,34 @@ def convert_conditions(text,variables,coordinates,conditions_str, radius=None):
                 condition_type = match.group(1)
                 function_name = match.group(2)
                 params = [param.strip() for param in re.split(r',\s*(?![^(]*\))', match.group(3))]
-                if check_function_format(function_name,params, radius):
+                if check_function_format(function_name, params, radius):
                     if condition_type in calculate_point_function:
-                        calculate_point_conditions.append([function_name,params])
+                        calculate_point_conditions.append([function_name, params])
                     else:
-                        conditions.append([function_name,params])
+                        conditions.append([function_name, params])
+    return conditions, calculate_point_conditions
+
+
+def convert_conditions(text, variables, coordinates, conditions_data, radius=None):
+    conditions = []
+    calculate_point_conditions = []
+
+    if isinstance(conditions_data, dict):
+        for cid, cond in conditions_data.items():
+            if not cond or len(cond) < 2:
+                continue
+            function_name = cond[0]
+            params = cond[1:]
+            if check_function_format(function_name, params, radius):
+                if cid in calculate_point_function:
+                    calculate_point_conditions.append([function_name, params])
+                else:
+                    conditions.append([function_name, params])
+    elif isinstance(conditions_data, str):
+        conditions, calculate_point_conditions = _parse_conditions_text(conditions_data, radius)
+    else:
+        print(f"不支持的 conditions_data 类型: {type(conditions_data)}")
+        return coordinates, variables, [], []
     for cond in reversed(conditions):
         # check wirh LLM whether the condition is right or not
         condition_right = LLM_check(text,cond)
@@ -171,40 +184,16 @@ def convert_conditions(text,variables,coordinates,conditions_str, radius=None):
     print(conditions_excute_reverse)
     return coordinates,variables,calculate_point_conditions,conditions_excute_reverse
 
-"""生成符合对应格式的字典"""
-def parse_points_info(points_str):
-    points_info = {}
-    points_str = points_str.replace(" ", "")
-    lines = points_str.strip().split('\n')
 
-    for line in lines:
-        if not line.strip():
-            continue
-        # handle comma-separated entries on one line
-        parts = re.split(r",(?=')", line.strip())
-        for part in parts:
-            part = part.strip().rstrip(',')
-            match = re.match(r"'(\w)':\(([^,]+),([^,]+)\)", part)
-            if match:
-                point = match.group(1)
-                x, y = match.group(2), match.group(3)
-                if x.replace('.', '', 1).isdigit() and y.replace('.', '', 1).isdigit():
-                    points_info[point] = (float(x), float(y))
-                else:
-                    points_info[point] = f"{x}, {y}"
-
-    return points_info
 
 """利用对应格式的字典生成变量"""
 def convert_coordinates(coordinates, radius=None):
     def parse_value(value):
-        # 替换特定的字母
         if value == 'r':
             return radius if radius is not None else 1.0, False
         elif value == '-r':
             return -radius if radius is not None else -1.0, False
         else:
-            # 尝试转换为浮点数
             try:
                 return float(value), False
             except ValueError:
@@ -214,63 +203,29 @@ def convert_coordinates(coordinates, radius=None):
     variable_names = {}
 
     for key, value in coordinates.items():
-        if isinstance(value, tuple):
-            # 如果已经是元组，直接添加到结果中
-            converted_coords[key] = value
+        if isinstance(value, (tuple, list)):
+            coord_value = []
+            for v in value:
+                parsed, is_string = parse_value(str(v).strip())
+                if is_string:
+                    if parsed not in variable_names:
+                        variable_names[parsed] = [0, False]
+                coord_value.append(parsed)
+            converted_coords[key] = tuple(coord_value)
         else:
-            # 处理字符串类型的坐标
-            # 使用逗号分隔字符串并去除空格
             parts = value.split(',')
-            # 创建新的坐标元组
             coord_value = []
             for part in parts:
-                value, is_string = parse_value(part.strip())
+                parsed, is_string = parse_value(part.strip())
                 if is_string:
-                    if value not in variable_names.keys():
-                        # 如果变量名不在字典中，添加它
-                        variable_names[value] = [0, False]
-                coord_value.append(value)
-            new_value = tuple(coord_value)
-            converted_coords[key] = new_value
+                    if parsed not in variable_names:
+                        variable_names[parsed] = [0, False]
+                coord_value.append(parsed)
+            converted_coords[key] = tuple(coord_value)
 
     return converted_coords, variable_names
 
-"""提取坐标和条件信息"""
-def extract_info(text):
-    # 支持带 {} 和不带 {} 两种格式
-    coord_pattern = re.compile(r'坐标：\s*\{?([^}]*?)\}?(?=\s*条件：|$)', re.DOTALL)
-    cond_pattern = re.compile(r'条件：\s*\{?([^}]*?)\}?(?=$)', re.DOTALL)
 
-    coords = coord_pattern.search(text)
-    conds = cond_pattern.search(text)
-
-    coord_info = coords.group(1).strip() if coords else ""
-    cond_info = conds.group(1).strip() if conds else ""
-
-    return coord_info, cond_info
-"""提取条件信息"""
-def parse_conditions(conditions_str):
-    """
-    从给定的字符串中解析条件信息，并生成一个列表 conditions。
-
-    参数：
-    conditions_str -- 包含条件信息的字符串，每行一个条件
-
-    返回值：
-    返回一个列表，其中每个元素是一个元组，包含条件类型（'angle' 或 'dist'）和对应的参数
-    """
-    conditions = []
-    lines = conditions_str.strip().split('\n')
-
-    for line in lines:
-        match = re.match(r"'(\w+)':\s*(\w+)\(([^)]+)\)", line.strip())
-        if match:
-            condition_type = match.group(1)
-            function_name = match.group(2)
-            params = match.group(3).split(', ')
-            conditions.append((condition_type, function_name, params))
-
-    return conditions
 
 
 def is_number(s, radius=None):
