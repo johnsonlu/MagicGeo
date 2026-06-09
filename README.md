@@ -68,6 +68,12 @@ The default configuration uses DeepSeek V4 Flash:
 | `API_KEY` | (required) | Your API key |
 | `BASE_URL` | `https://api.deepseek.com` | API endpoint |
 | `MODEL_NAME` | `deepseek-v4-flash` | Model name |
+| `COORDINATE_ENGINE` | `brute_force` | Coordinate assignment engine (`brute_force` or `nelder_mead`) |
+| `COORDINATE_ENGINE_TIMEOUT` | `600` | Wall-clock seconds before coordinate assignment aborts |
+| `COORDINATE_LOW` / `COORDINATE_HIGH` | `-2` / `2` | Search region per free variable |
+| `NELDER_MEAD_RESTARTS` | `8` | Random restarts for Nelder-Mead |
+| `NELDER_MEAD_MAXITER` | `2000` | Max iterations per Nelder-Mead restart |
+| `BOOLEAN_PENALTY` | `1000` | Penalty per violated discrete constraint during Nelder-Mead search |
 
 You can also use other OpenAI-compatible providers (e.g., Qwen, OpenAI, etc.) by changing `BASE_URL` and `MODEL_NAME`.
 

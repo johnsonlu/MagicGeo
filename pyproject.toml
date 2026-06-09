@@ -10,6 +10,7 @@ dependencies = [
     "pdf2image>=1.17",
     "Pillow>=11.0",
     "python-dotenv>=1.0",
+    "scipy>=1.14",
 ]
 
 [tool.hatch.build.targets.wheel]

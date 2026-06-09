@@ -10,6 +10,7 @@ from openai import OpenAI
 load_dotenv()
 
 from geo.Auxiliary_function import convert_coordinates, convert_conditions
+from geo.coordinate_engine_config import COORDINATE_ENGINE_TIMEOUT
 from geo.Kernel_function import extract_and_modify
 from geo.latex_pdf_open import get_latex_code, for_render_code, render_latex_to_pdf
 
@@ -136,7 +137,7 @@ def process_geometry_task(item, generic_knowledge, output_dir=None):
         args=(generated_points, condition_code, variables, output_queue)
     )
     process.start()
-    process.join(600) 
+    process.join(COORDINATE_ENGINE_TIMEOUT) 
 
     if process.is_alive():
         process.terminate()
