@@ -1,6 +1,10 @@
+import os
 import re
+from dotenv import load_dotenv
 from Geometric_function import dist, angle, angle_bisector, equal_line,  ortho, online, midpoint,parallel,angle_relation,arc_midpoint, online_extension, online_inside, calc_var_from_dist, is_point_in_triangle, is_acute_triangle, is_point_out_triangle, line_ratio
 from openai import OpenAI
+
+load_dotenv()
 
 calculate_point_function = ['midpoint']
 func_information = {
@@ -24,8 +28,8 @@ func_information = {
 
 def LLM_check(text,condition):
     client = OpenAI(
-        api_key=" sk-873d65a2fa6945d3801542466346654d",
-        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        api_key=os.getenv("API_KEY"),
+        base_url=os.getenv("BASE_URL", "https://api.deepseek.com"),
     )
     cond_key = condition[0]
     if cond_key == "dist" or cond_key == 'online_inside' or cond_key == 'ortho' or cond_key == 'equal_line' or cond_key =='online_extension' or cond_key =='angle' or cond_key =='midpoint' or cond_key =='angle_relation':
@@ -40,7 +44,7 @@ def LLM_check(text,condition):
             params_str += f"{cond_value[index]}, "
     query = f'题目：{text}，条件：{cond_key}{params_str},其中该条件的意思为{cond_info}，请据此意思判断从题目中是否能推出该条件，并只用"yes"或"no"回答。'
     response = client.chat.completions.create(
-        model="qwen-plus",
+        model=os.getenv("MODEL_NAME", "deepseek-v4-flash"),
         messages=[
             {
                 "role": "system",

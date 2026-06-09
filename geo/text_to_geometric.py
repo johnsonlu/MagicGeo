@@ -4,16 +4,19 @@ import multiprocessing
 import time
 import math
 import os
+from dotenv import load_dotenv
 from openai import OpenAI
+
+load_dotenv()
 from Auxiliary_function import parse_points_info, convert_coordinates, extract_info, convert_conditions
 from Kernel_function import extract_and_modify
 from latex_pdf_open import get_latex_code, for_render_code, render_latex_to_pdf
 
 # ================= 配置与初始化 =================
 API_CONFIG = {
-    "api_key": "YOUR_API_KEY",  # 填入你的 API Key
-    "base_url": "YOUR_BASE_URL", # 填入你的 Base URL
-    "model": "qwen-plus"
+    "api_key": os.getenv("API_KEY", "YOUR_API_KEY"),
+    "base_url": os.getenv("BASE_URL", "https://api.deepseek.com"),
+    "model": os.getenv("MODEL_NAME", "deepseek-v4-flash")
 }
 
 client = OpenAI(**API_CONFIG)

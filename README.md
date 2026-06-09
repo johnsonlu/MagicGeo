@@ -1,9 +1,9 @@
-# MagiceG*e*o<br><sub><sup>Training-Free Text-Guided Geometric Diagram Generation</sup></sub>
+# MagicG*e*o
 
-MagicG*e*o is a training-free framework 
-designed for generating geometric diagrams from textual descriptions. Creating precise diagrams directly from text can be challenging, but MagicGeo simplifies the process by formulating
-diagram generation as a coordinate optimization problem, integrating large language models for text translation and a formal language solver to ensure geometric correctness. 
-MagicGeo’s coordinate-aware generation effectively handles spatial relationships in text-to-diagram tasks, enabling accurate and efficient geometric diagram synthesis.
+<sub><sup>Training-Free Text-Guided Geometric Diagram Generation</sup></sub>
+
+MagicGeo is a training-free framework for generating geometric diagrams from textual descriptions. It formulates diagram generation as a coordinate optimization problem, integrating large language models for text translation and a formal language solver to ensure geometric correctness.
+
 <p align="center">
   <img src="image/3.png" alt="Framework of MagicGeo">
 </p>
@@ -17,17 +17,17 @@ MagicGeo’s coordinate-aware generation effectively handles spatial relationshi
 
 ![Framework of MagiceGeo](image/1.png)
 ![Framework of MagiceGeo](image/2.png)
+
 ## Table of Contents
 
-- [MagiceG*e*oTraining-Free Text-Guided Geometric Diagram Generation](#magicegeotraining-free-text-guided-geometric-diagram-generation)
-  - [Performance](#performance)
-  - [Table of Contents](#table-of-contents)
-  - [Install](#install)
-  - [Usage](#usage)
-  - [Datasets](#datasets)
-  - [Citation](#citation)
-  - [Acknowledgments](#acknowledgments)
-  - [Maintainers](#maintainers)
+- [Install](#install)
+- [Usage](#usage)
+- [Configuration](#configuration)
+- [Datasets](#datasets)
+- [Citation](#citation)
+- [Acknowledgments](#acknowledgments)
+- [Maintainers](#maintainers)
+
 ## Install
 
 Requires [uv](https://docs.astral.sh/uv/) and Python >=3.10.
@@ -40,39 +40,55 @@ uv sync
 > - macOS: `brew install poppler`
 > - Linux: `apt-get install poppler-utils`
 
+## Configuration
+
+Set environment variables for your API credentials:
+
+```bash
+cp .env.example .env
+# Then edit .env with your API key and base URL
+```
+
+The `.env` file is automatically loaded by `python-dotenv` at runtime.
+
+Or export them directly:
+
+```bash
+export API_KEY=your_api_key_here
+export BASE_URL=https://api.deepseek.com
+export MODEL_NAME=deepseek-v4-flash
+```
+
+### Using DeepSeek V4 Flash
+
+The default configuration uses DeepSeek V4 Flash:
+
+| Variable | Default | Description |
+|---|---|---|
+| `API_KEY` | (required) | Your API key |
+| `BASE_URL` | `https://api.deepseek.com` | API endpoint |
+| `MODEL_NAME` | `deepseek-v4-flash` | Model name |
+
+You can also use other OpenAI-compatible providers (e.g., Qwen, OpenAI, etc.) by changing `BASE_URL` and `MODEL_NAME`.
+
 ## Usage
-As long as the required dependencies are installed, using MagiceG*e*o to
-generate, compile, render, and save TikZ drawings is straightforward.
-
-get your own api
-```
-    client = OpenAI(
-        api_key="***",
-        base_url="***",
-    )
-```
-Clone this project
-```bash
-    git clone https://link-to-project
-```
-Go to project directory
 
 ```bash
-    cd geo
+cd geo
+python text_to_geometric.py
 ```
-Startup server
-```bash
-    python text_to_geometric.py
-```
+
+By default, it processes `../json/circle.json`. To use a different dataset, edit the `__main__` block in `geo/text_to_geometric.py`.
+
 ## Datasets
-* circle: json/circle.json
-* triangle: json/triangle.json
-* quadrangle: json/quadrangle.json
+
+- circle: `json/circle.json`
+- triangle: `json/triangle.json`
+- quadrangle: `json/quadrangle.json`
 
 ## Citation
 
-If MagiceG*e*o has been beneficial for your research or applications, we
-kindly request you to acknowledge its use by citing it as follows:
+If MagicGeo has been beneficial for your research or applications, please cite it as:
 
 ```bibtex
 @article{wang2025magicgeo,
@@ -84,13 +100,9 @@ kindly request you to acknowledge its use by citing it as follows:
 ```
 
 ## Acknowledgments
-The implementation of our model is largely based on
-[DeepSeek](https://github.com/deepseek-ai/DeepSeek-V3).
+
+The implementation is largely based on [DeepSeek](https://github.com/deepseek-ai/DeepSeek-V3).
 
 ## Maintainers
 
 [@wjx](https://github.com/wjx421)
-
-
-
-
