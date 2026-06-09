@@ -30,9 +30,15 @@ MagicGeo’s coordinate-aware generation effectively handles spatial relationshi
   - [Maintainers](#maintainers)
 ## Install
 
+Requires [uv](https://docs.astral.sh/uv/) and Python >=3.10.
+
+```bash
+uv sync
 ```
-pip install -r requirements.txt
-```
+
+> **System dependency:** `pdf2image` requires [poppler](https://github.com/oschwartz10612/poppler-windows/releases/).
+> - macOS: `brew install poppler`
+> - Linux: `apt-get install poppler-utils`
 
 ## Usage
 As long as the required dependencies are installed, using MagiceG*e*o to

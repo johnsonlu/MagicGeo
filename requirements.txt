@@ -1,12 +1,5 @@
-json
-re
-openai
-time
-tkinter
-pdf2image
-PIL
-matplotlib
-matplotlib.pyplot
-matplotlib.backends.backend_pgf
-math
-os
+matplotlib>=3.10
+numpy>=2.0
+openai>=1.30
+pdf2image>=1.17
+Pillow>=11.0
