@@ -2,7 +2,15 @@ import importlib
 
 import pytest
 
+import geo.Auxiliary_function as aux
 from geo.Auxiliary_function import check_condition_break
+
+
+@pytest.fixture(autouse=True)
+def _skip_llm_condition_check(monkeypatch, request):
+    if request.node.get_closest_marker("llm_condition_check"):
+        return
+    monkeypatch.setattr(aux, "filter_conditions_with_llm", lambda text, conds: conds)
 
 
 def assert_feasible(condition_code, coordinates, variables):

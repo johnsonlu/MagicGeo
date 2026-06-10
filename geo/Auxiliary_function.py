@@ -1,3 +1,4 @@
+import json
 import os
 import re
 
@@ -89,33 +90,41 @@ func_information = {
     "line_ratio": "判断线段的比例关系",
 }
 
+LLM_TRUSTED_CONDITION_KEYS = frozenset(
+    {
+        "dist",
+        "online_inside",
+        "ortho",
+        "equal_line",
+        "online_extension",
+        "angle",
+        "midpoint",
+        "angle_relation",
+    }
+)
 
-def LLM_check(text, condition):
+
+def _format_condition_description(cond):
+    cond_key = cond[0]
+    cond_value = cond[1]
+    cond_info = func_information.get(cond_key, "")
+    params_str = "(" + ", ".join(str(v) for v in cond_value) + ")"
+    return f"{cond_key}{params_str}，含义：{cond_info}"
+
+
+def _llm_batch_check(text, to_check):
+    """Ask the LLM which conditions can be inferred from the problem text."""
     client = OpenAI(
         api_key=os.getenv("API_KEY"),
         base_url=os.getenv("BASE_URL", "https://api.deepseek.com"),
     )
-    cond_key = condition[0]
-    if (
-        cond_key == "dist"
-        or cond_key == "online_inside"
-        or cond_key == "ortho"
-        or cond_key == "equal_line"
-        or cond_key == "online_extension"
-        or cond_key == "angle"
-        or cond_key == "midpoint"
-        or cond_key == "angle_relation"
-    ):
-        return True
-    cond_value = condition[1]
-    cond_info = func_information[cond_key]
-    params_str = "("
-    for index in range(len(cond_value)):
-        if index == len(cond_value) - 1:
-            params_str += f"{cond_value[index]})"
-        else:
-            params_str += f"{cond_value[index]}, "
-    query = f'题目：{text}，条件：{cond_key}{params_str},其中该条件的意思为{cond_info}，请据此意思判断从题目中是否能推出该条件，并只用"yes"或"no"回答。'
+    lines = [f"- c{i}: {_format_condition_description(cond)}" for i, cond in enumerate(to_check)]
+    query = (
+        f"题目：{text}\n"
+        "判断以下条件是否能从题目中推出：\n"
+        + "\n".join(lines)
+        + '\n以 JSON 回答，键为条件编号（如 "c0"），值为 "yes" 或 "no"。'
+    )
     response = client.chat.completions.create(
         model=os.getenv("MODEL_NAME", "deepseek-v4-flash"),
         messages=[
@@ -124,14 +133,33 @@ def LLM_check(text, condition):
         ],
         temperature=0.0,
         stream=False,
+        response_format={"type": "json_object"},
     )
+    raw = response.choices[0].message.content.strip()
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        print(f"LLM 条件校验 JSON 解析失败，保留全部待检条件: {raw}")
+        return None
 
-    # 提取响应中的 yes/no 信息
-    condition_satisfied = response.choices[0].message.content.strip().lower()
-    if "yes" in condition_satisfied:
-        return True
-    else:
-        return False
+
+def filter_conditions_with_llm(text, conditions):
+    to_check = [c for c in conditions if c[0] not in LLM_TRUSTED_CONDITION_KEYS]
+    if not to_check:
+        return list(conditions)
+
+    verdicts = _llm_batch_check(text, to_check)
+    drop_ids = set()
+    for i, cond in enumerate(to_check):
+        key = f"c{i}"
+        if verdicts is None or key not in verdicts:
+            if verdicts is not None:
+                print(f"LLM 条件校验缺少键 {key}，保留条件: {cond}")
+            continue
+        if "yes" not in str(verdicts[key]).strip().lower():
+            drop_ids.add(id(cond))
+
+    return [c for c in conditions if id(c) not in drop_ids]
 
 
 def _split_point_names(group):
@@ -397,6 +425,53 @@ def fix_online_inside_coordinates(coordinates, _variables, conditions):
             )
 
 
+_NUMERIC_TAIL_CONDITION_KEYS = frozenset(
+    {"dist", "angle", "angle_relation", "line_ratio"}
+)
+
+
+def _condition_to_execute_code(cond):
+    cond_key = cond[0]
+    cond_value = cond[1]
+    if cond_key == "equal_line" and len(cond_value) == 3:
+        cond_key = "dist"
+    params_str = "variables,"
+    numeric_tail = cond_key in _NUMERIC_TAIL_CONDITION_KEYS
+    for index, value in enumerate(cond_value):
+        if index == len(cond_value) - 1:
+            if numeric_tail:
+                params_str += f"{value},coordinates"
+            else:
+                params_str += f"coordinates['{value}'],coordinates"
+        else:
+            params_str += f"coordinates['{value}'],"
+    return f"{cond_key}({params_str})"
+
+
+def _partition_satisfied_conditions(conditions, variables, coordinates):
+    """Return execute codes for conditions that still need solving.
+
+    Already-satisfied conditions are logged and omitted. Returns None on eval error.
+    """
+    conditions_execute = []
+    for cond in reversed(conditions):
+        execute_code = _condition_to_execute_code(cond)
+        try:
+            is_satisfied, is_calculate = eval_geometry_condition(
+                execute_code, variables, coordinates
+            )
+        except Exception:
+            print(execute_code)
+            print("不能执行条件代码in convert_conditions")
+            return None
+        if is_calculate:
+            if is_satisfied:
+                print(f"already satisfied, delete condition: {execute_code}")
+        else:
+            conditions_execute.append(execute_code)
+    return list(reversed(conditions_execute))
+
+
 def convert_conditions(text, variables, coordinates, conditions_data, radius=None):
     conditions = []
     calculate_point_conditions = []
@@ -422,70 +497,22 @@ def convert_conditions(text, variables, coordinates, conditions_data, radius=Non
 
     fix_online_inside_coordinates(coordinates, variables, conditions)
 
-    for cond in reversed(conditions):
-        # check wirh LLM whether the condition is right or not
-        condition_right = LLM_check(text, cond)
-        if not condition_right:
-            conditions.remove(cond)
-            print("\n check with LLM, delete condition:\n")
-            print(cond)
+    kept = filter_conditions_with_llm(text, conditions)
+    for cond in conditions:
+        if cond not in kept:
+            print(f"check with LLM, delete condition: {cond}")
+    conditions = kept
 
     conditions = add_on_circle_dist_constraints(
         text, coordinates, conditions, radius=radius
     )
     conditions = add_parallelogram_parallel_constraints(text, coordinates, conditions)
 
-    # delete conditions that have already satisfied.
-    conditions_excute = []
-    for cond in reversed(conditions):
-        cond_key = cond[0]
-        cond_value = cond[1]
-        if cond_key == "equal_line" and len(cond_value) == 3:
-            cond_key = "dist"
-        # check whether the condition is already satisifed or not
-        params_str = "variables,"
-        if (
-            cond_key == "dist"
-            or cond_key == "angle"
-            or cond_key == "angle_relation"
-            or cond_key == "line_ratio"
-        ):
-            for index in range(len(cond_value)):
-                if index == len(cond_value) - 1:
-                    # params_str += f"{int(cond_value[index])/10}"
-                    params_str += f"{cond_value[index]},coordinates"
-                else:
-                    params_str += f"coordinates['{cond_value[index]}'],"
-        else:
-            for index in range(len(cond_value)):
-                if index == len(cond_value) - 1:
-                    # params_str += f"{int(cond_value[index])/10}"
-                    params_str += f"coordinates['{cond_value[index]}'],coordinates"
-                else:
-                    params_str += f"coordinates['{cond_value[index]}'],"
-
-        excute_code = f"{cond_key}({params_str})"
-
-        try:
-            # 尝试执行条件代码
-            is_satisfied, is_calculate = eval_geometry_condition(
-                excute_code, variables, coordinates
-            )
-            if is_calculate:
-                if is_satisfied:
-                    conditions.remove(cond)
-                    print("\n already satiified, delete condition:\n")
-                    print(excute_code)
-            else:
-                conditions_excute.append(excute_code)
-        except Exception as e:
-            print(excute_code)
-            print("不能执行条件代码in convert_conditions")
-            conditions = None
-            break
-    conditions_excute_reverse = []
-    for excute_code in reversed(conditions_excute):
-        conditions_excute_reverse.append(excute_code)
+    conditions_execute = _partition_satisfied_conditions(
+        conditions, variables, coordinates
+    )
+    if conditions_execute is None:
+        return coordinates, variables, [], []
 
     # 可计算点替换为函数
     derived_points = set()
@@ -511,8 +538,8 @@ def convert_conditions(text, variables, coordinates, conditions_data, radius=Non
     print(variables)
 
     print(calculate_point_conditions)
-    print(conditions_excute_reverse)
-    return coordinates, variables, calculate_point_conditions, conditions_excute_reverse
+    print(conditions_execute)
+    return coordinates, variables, calculate_point_conditions, conditions_execute
 
 
 """利用对应格式的字典生成变量"""

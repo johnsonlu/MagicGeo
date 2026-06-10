@@ -21,7 +21,7 @@ def effective_nelder_mead_restarts(n_vars):
 BOOLEAN_PENALTY = float(os.getenv("BOOLEAN_PENALTY", "1000"))
 EARLY_EXIT_PENALTY = float(os.getenv("EARLY_EXIT_PENALTY", "1e-6"))
 
-CONTINUOUS_CONSTRAINTS = frozenset(
+CONTINUOUS_CONSTRAINTS = frozenset[str](
     {
         "dist",
         "angle",

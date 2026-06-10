@@ -16,6 +16,11 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
 
+[tool.pytest.ini_options]
+markers = [
+    "llm_condition_check: run real filter_conditions_with_llm logic (not autouse-stubbed)",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["geo/"]
 
