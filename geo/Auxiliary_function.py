@@ -15,6 +15,7 @@ from geo.Geometric_function import (
     online_extension,
     online_inside,
     calc_var_from_dist,
+    calc_midpoint,
     is_point_in_triangle,
     is_acute_triangle,
     is_point_out_triangle,
@@ -39,6 +40,7 @@ GEOMETRY_CONDITION_GLOBALS = {
     "online_extension": online_extension,
     "online_inside": online_inside,
     "calc_var_from_dist": calc_var_from_dist,
+    "calc_midpoint": calc_midpoint,
     "is_point_in_triangle": is_point_in_triangle,
     "is_acute_triangle": is_acute_triangle,
     "is_point_out_triangle": is_point_out_triangle,
@@ -51,6 +53,14 @@ def eval_geometry_condition(execute_code, variables, coordinates):
     namespace["variables"] = variables
     namespace["coordinates"] = coordinates
     return eval(execute_code, namespace)
+
+
+def eval_derived_coordinate(expr, variables, coordinates):
+    """Evaluate a calc_* coordinate expression such as calc_midpoint(...)."""
+    result, is_calculate = eval_geometry_condition(expr, variables, coordinates)
+    if is_calculate and result is not None:
+        return float(result[0]), float(result[1])
+    return None
 from openai import OpenAI
 
 load_dotenv()
@@ -387,7 +397,7 @@ def convert_conditions(text, variables, coordinates, conditions_data, radius=Non
             function_name = cond[0]
             params = cond[1:]
             if check_function_format(function_name, params, radius):
-                if cid in calculate_point_function:
+                if function_name in calculate_point_function:
                     calculate_point_conditions.append([function_name, params])
                 else:
                     conditions.append([function_name, params])
@@ -460,20 +470,26 @@ def convert_conditions(text, variables, coordinates, conditions_data, radius=Non
     for excute_code in reversed(conditions_excute):
         conditions_excute_reverse.append(excute_code)
 
-    #可计算点替换为函数    
+    #可计算点替换为函数
+    derived_points = set()
     for cond in calculate_point_conditions:
         cond_key = cond[0]
         cond_value = cond[1]
         depend_point = cond_value[0]
-        if coordinates[depend_point][0] in variables:
-            del variables[coordinates[depend_point][0]]
-        if coordinates[depend_point][1] in variables:
-            del variables[coordinates[depend_point][1]]
+        if depend_point in derived_points:
+            continue
+        point_coords = coordinates[depend_point]
+        if len(point_coords) >= 2:
+            if point_coords[0] in variables:
+                del variables[point_coords[0]]
+            if point_coords[1] in variables:
+                del variables[point_coords[1]]
         del coordinates[depend_point]
-        dependences=f"calc_{cond_key}(variables,"
+        dependences = f"calc_{cond_key}(variables,"
         for index in range(1, len(cond_value)):
-            dependences+=f"coordinates['{cond_value[index]}'],"
-        coordinates[depend_point] = [dependences+'coordinates)']
+            dependences += f"coordinates['{cond_value[index]}'],"
+        coordinates[depend_point] = [dependences + "coordinates)"]
+        derived_points.add(depend_point)
     print(coordinates)
     print(variables)
 

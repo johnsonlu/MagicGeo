@@ -13,6 +13,7 @@ from geo.Auxiliary_function import (
     check_coordinates_distinct,
     convert_coordinates,
     convert_conditions,
+    eval_derived_coordinate,
 )
 from geo.coordinate_engine_config import COORDINATE_ENGINE_TIMEOUT
 from geo.Kernel_function import extract_and_modify
@@ -89,53 +90,49 @@ def analyze_geometry_context(text):
     extra_info = "。".join(parts)
     return extra_info, radius
 
-def calcmidpoint(A, B):
-    return ((A[0] + B[0]) / 2, (A[1] + B[1]) / 2)
-
-
 def _resolve_coord_value(value, variables):
     if isinstance(value, str):
         return float(variables.get(value, [value])[0])
     return float(value)
 
 
+def _is_derived_coord(coords):
+    return len(coords) == 1 and isinstance(coords[0], str) and coords[0].startswith("calc_")
+
+
 def _coordinates_fully_resolved(coordinates, variables):
     if variables:
         return False
-    for x, y in coordinates.values():
+    for coords in coordinates.values():
+        if _is_derived_coord(coords):
+            continue
+        if len(coords) < 2:
+            return False
+        x, y = coords[0], coords[1]
         if isinstance(x, str) or isinstance(y, str):
             return False
     return True
 
 
+def _resolve_point_coords(coords, variables, coordinates):
+    if _is_derived_coord(coords):
+        return eval_derived_coordinate(coords[0], variables, coordinates)
+    if len(coords) < 2:
+        return None
+    x, y = coords[0], coords[1]
+    if isinstance(x, str) or isinstance(y, str):
+        return _resolve_coord_value(x, variables), _resolve_coord_value(y, variables)
+    return float(x), float(y)
+
+
 def _build_fusion(coordinates, variables, scale=2.0):
     fusion = {}
     for point, coords in coordinates.items():
-        if len(coords) < 2:
+        resolved = _resolve_point_coords(coords, variables, coordinates)
+        if resolved is None:
             continue
-        fusion[point] = (
-            _resolve_coord_value(coords[0], variables) * scale,
-            _resolve_coord_value(coords[1], variables) * scale,
-        )
+        fusion[point] = (resolved[0] * scale, resolved[1] * scale)
     return fusion
-
-
-def _apply_midpoint_overrides(text, modified_coordinates, fusion):
-    if "中点" not in text:
-        return fusion
-    for mid_p in find_midpoint_letters(text):
-        if mid_p in modified_coordinates:
-            match = re.findall(
-                r"coordinates\['([A-Z])'\]", str(modified_coordinates[mid_p])
-            )
-            if len(match) == 2:
-                fusion[mid_p] = calcmidpoint(fusion[match[0]], fusion[match[1]])
-    return fusion
-
-def find_midpoint_letters(text):
-    midpoint_pattern = r"点([A-Z])(?:、([A-Z]))?(?:分别是|是).*?中点"
-    matches = re.findall(midpoint_pattern, text)
-    return [letter for pair in matches for letter in pair if letter]
 
 def run_extract_and_modify(generated_points, condition_code, variables, output_queue):
     try:
@@ -207,9 +204,7 @@ def process_geometry_task(item, generic_knowledge, output_dir=None, json_stem=No
             and check_coordinates_distinct(generated_points, variables)
         ):
             print("所有条件已满足，跳过数值求解")
-            fusion = _apply_midpoint_overrides(
-                text, generated_points, _build_fusion(generated_points, variables)
-            )
+            fusion = _build_fusion(generated_points, variables)
             render_geometry_pdf(text, fusion, str(output_dir / f"{item['id']}.pdf"))
             return
         print("条件方程生成失败")
@@ -235,11 +230,7 @@ def process_geometry_task(item, generic_knowledge, output_dir=None, json_stem=No
         modified_coordinates, extracted_variables, found = result
         
         if found:
-            fusion = _apply_midpoint_overrides(
-                text,
-                modified_coordinates,
-                _build_fusion(modified_coordinates, extracted_variables),
-            )
+            fusion = _build_fusion(modified_coordinates, extracted_variables)
             render_geometry_pdf(text, fusion, str(output_dir / f"{item['id']}.pdf"))
         else:
             print("未能找到符合条件的数值解")

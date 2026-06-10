@@ -436,10 +436,11 @@ def test_quadrangle_problem_0_solves_after_online_inside_fix(
     assert abs(_resolved_distance(coordinates, result_variables, "D", "G") - 0.4) < 0.05
 
 
-def test_quadrangle_problem_1_solves_with_midpoint_soft_residual(
+def test_quadrangle_problem_1_solves_with_derived_midpoint(
     monkeypatch, fast_nelder_mead_env
 ):
     from geo.Auxiliary_function import convert_conditions, convert_coordinates
+    from geo.text_to_geometric import _build_fusion
 
     text = "在矩形ABCD中，AC与BD相交于点O，连接AC,BD。"
     result = {
@@ -460,9 +461,13 @@ def test_quadrangle_problem_1_solves_with_midpoint_soft_residual(
     }
 
     coordinates, variables = convert_coordinates(result["coordinates"])
-    coordinates, variables, _, condition_code = convert_conditions(
+    coordinates, variables, calc_conds, condition_code = convert_conditions(
         text, variables, coordinates, result["conditions"]
     )
+
+    assert len(calc_conds) == 2
+    assert coordinates["O"][0].startswith("calc_midpoint(")
+    assert not any("midpoint" in code for code in condition_code)
 
     extract_and_modify = reload_extract_and_modify(
         monkeypatch,
@@ -475,6 +480,14 @@ def test_quadrangle_problem_1_solves_with_midpoint_soft_residual(
 
     assert found is True
     assert_feasible(condition_code, coordinates, result_variables)
+
+    fusion = _build_fusion(coordinates, result_variables, scale=1.0)
+    assert "O" in fusion
+    ax, ay = fusion["A"]
+    cx, cy = fusion["C"]
+    ox, oy = fusion["O"]
+    assert abs(ox - (ax + cx) / 2) < 0.01
+    assert abs(oy - (ay + cy) / 2) < 0.01
 
 
 def test_sanitize_compound_coordinate_variables_renames_a_plus_b():

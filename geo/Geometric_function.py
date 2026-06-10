@@ -41,9 +41,19 @@ def check_is_calculate(variables,point_list,coordinates):
     is_calculate = True
     for i in range(len(point_list)):
         if len(point_list[i]) == 1:
-            point_list[i], is_calculate=eval(point_list[i][0])
-            if not is_calculate:
-                return is_calculate,point_list
+            expr = point_list[i][0]
+            if isinstance(expr, str) and expr.startswith("calc_"):
+                namespace = {
+                    "variables": variables,
+                    "coordinates": coordinates,
+                    "calc_midpoint": calc_midpoint,
+                }
+                result, is_calculate = eval(expr, namespace)
+            else:
+                result, is_calculate = eval(expr)
+            if not is_calculate or result is None:
+                return False, point_list
+            point_list[i] = list(result) if isinstance(result, tuple) else result
         else:
             point = [point_list[i][0], point_list[i][1]]
             if isinstance(point_list[i][0], str):

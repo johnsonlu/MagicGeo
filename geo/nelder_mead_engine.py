@@ -356,6 +356,8 @@ def _resolve_known_points(coordinates):
     """Return list of (x, y) for coordinates with fully known numeric values."""
     resolved = []
     for ref in coordinates.values():
+        if len(ref) != 2:
+            continue
         x, y = ref
         if not isinstance(x, str) and not isinstance(y, str):
             resolved.append((float(x), float(y)))
