@@ -9,7 +9,11 @@ from openai import OpenAI
 
 load_dotenv()
 
-from geo.Auxiliary_function import convert_coordinates, convert_conditions
+from geo.Auxiliary_function import (
+    check_coordinates_distinct,
+    convert_coordinates,
+    convert_conditions,
+)
 from geo.coordinate_engine_config import COORDINATE_ENGINE_TIMEOUT
 from geo.Kernel_function import extract_and_modify
 from geo.latex_pdf_open import get_latex_code, for_render_code, render_latex_to_pdf
@@ -77,6 +81,46 @@ def analyze_geometry_context(text):
 def calcmidpoint(A, B):
     return ((A[0] + B[0]) / 2, (A[1] + B[1]) / 2)
 
+
+def _resolve_coord_value(value, variables):
+    if isinstance(value, str):
+        return float(variables.get(value, [value])[0])
+    return float(value)
+
+
+def _coordinates_fully_resolved(coordinates, variables):
+    if variables:
+        return False
+    for x, y in coordinates.values():
+        if isinstance(x, str) or isinstance(y, str):
+            return False
+    return True
+
+
+def _build_fusion(coordinates, variables, scale=2.0):
+    fusion = {}
+    for point, coords in coordinates.items():
+        if len(coords) < 2:
+            continue
+        fusion[point] = (
+            _resolve_coord_value(coords[0], variables) * scale,
+            _resolve_coord_value(coords[1], variables) * scale,
+        )
+    return fusion
+
+
+def _apply_midpoint_overrides(text, modified_coordinates, fusion):
+    if "中点" not in text:
+        return fusion
+    for mid_p in find_midpoint_letters(text):
+        if mid_p in modified_coordinates:
+            match = re.findall(
+                r"coordinates\['([A-Z])'\]", str(modified_coordinates[mid_p])
+            )
+            if len(match) == 2:
+                fusion[mid_p] = calcmidpoint(fusion[match[0]], fusion[match[1]])
+    return fusion
+
 def find_midpoint_letters(text):
     midpoint_pattern = r"点([A-Z])(?:、([A-Z]))?(?:分别是|是).*?中点"
     matches = re.findall(midpoint_pattern, text)
@@ -133,6 +177,16 @@ def process_geometry_task(item, generic_knowledge, output_dir=None):
     )
     
     if not condition_code:
+        if (
+            _coordinates_fully_resolved(generated_points, variables)
+            and check_coordinates_distinct(generated_points, variables)
+        ):
+            print("所有条件已满足，跳过数值求解")
+            fusion = _apply_midpoint_overrides(
+                text, generated_points, _build_fusion(generated_points, variables)
+            )
+            render_geometry_pdf(text, fusion, str(output_dir / f"{item['id']}.pdf"))
+            return
         print("条件方程生成失败")
         return
 
@@ -156,24 +210,11 @@ def process_geometry_task(item, generic_knowledge, output_dir=None):
         modified_coordinates, extracted_variables, found = result
         
         if found:
-            fusion = {}
-            for point, coords in modified_coordinates.items():
-                if len(coords) < 2: continue
-                # 获取变量的第一个解
-                v1 = extracted_variables.get(coords[0], [coords[0]])[0] if isinstance(coords[0], str) else coords[0]
-                v2 = extracted_variables.get(coords[1], [coords[1]])[0] if isinstance(coords[1], str) else coords[1]
-                # 统一缩放因子，适配绘图区域
-                fusion[point] = (float(v1) * 2, float(v2) * 2) 
-
-            # 处理中点补全逻辑
-            if "中点" in text:
-                for mid_p in find_midpoint_letters(text):
-                    if mid_p in modified_coordinates:
-                        match = re.findall(r"coordinates\['([A-Z])'\]", str(modified_coordinates[mid_p]))
-                        if len(match) == 2:
-                            fusion[mid_p] = calcmidpoint(fusion[match[0]], fusion[match[1]])
-
-            # 7. 渲染输出
+            fusion = _apply_midpoint_overrides(
+                text,
+                modified_coordinates,
+                _build_fusion(modified_coordinates, extracted_variables),
+            )
             render_geometry_pdf(text, fusion, str(output_dir / f"{item['id']}.pdf"))
         else:
             print("未能找到符合条件的数值解")

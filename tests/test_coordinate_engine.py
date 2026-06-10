@@ -346,6 +346,96 @@ def test_add_on_circle_dist_constraints_for_problem_5():
     assert all(params[2] == 1.0 for name, params in result if name == "dist")
 
 
+def test_check_coordinates_distinct_uses_euclidean_distance():
+    from geo.Auxiliary_function import convert_coordinates
+    from geo.Geometric_function import check_coordinates_distinct
+
+    coordinates, variables = convert_coordinates(
+        {
+            "F": ["f_x", "f_y"],
+            "G": ["g_x", "g_y"],
+        }
+    )
+    variables.update(
+        {
+            "f_x": [0.24, True],
+            "f_y": [0.32, True],
+            "g_x": [0.18, True],
+            "g_y": [0.24, True],
+        }
+    )
+
+    assert check_coordinates_distinct(coordinates, variables) is True
+
+
+def test_fix_online_inside_coordinates_swaps_wrong_axis():
+    from geo.Auxiliary_function import convert_coordinates, fix_online_inside_coordinates
+
+    coordinates, variables = convert_coordinates(
+        {
+            "A": [0, 0],
+            "B": [0, 0.5],
+            "C": [0.5, 0.5],
+            "D": [0.5, 0],
+            "E": [0.5, "e"],
+        }
+    )
+    conditions = [["online_inside", ["E", "B", "C"]]]
+
+    fix_online_inside_coordinates(coordinates, variables, conditions)
+
+    assert coordinates["E"] == ("e", 0.5)
+
+
+def test_quadrangle_problem_0_solves_after_online_inside_fix(
+    monkeypatch, fast_nelder_mead_env
+):
+    from geo.Auxiliary_function import convert_conditions, convert_coordinates
+
+    text = (
+        "在正方形ABCD中,点E在BC上,点F在AE上，点G在AE上，"
+        "BF⊥AE,DG⊥AE，BC=0.5,DG=0.4"
+    )
+    result = {
+        "coordinates": {
+            "A": [0, 0],
+            "B": [0, 0.5],
+            "C": [0.5, 0.5],
+            "D": [0.5, 0],
+            "E": [0.5, "e"],
+            "F": ["f_x", "f_y"],
+            "G": ["g_x", "g_y"],
+        },
+        "conditions": {
+            "c1": ["online_inside", "E", "B", "C"],
+            "c2": ["online_inside", "F", "A", "E"],
+            "c3": ["online_inside", "G", "A", "E"],
+            "c4": ["ortho", "B", "F", "A", "E"],
+            "c5": ["ortho", "D", "G", "A", "E"],
+            "c6": ["dist", "D", "G", 0.4],
+        },
+    }
+
+    coordinates, variables = convert_coordinates(result["coordinates"])
+    coordinates, variables, _, condition_code = convert_conditions(
+        text, variables, coordinates, result["conditions"]
+    )
+    assert coordinates["E"] == ("e", 0.5)
+
+    extract_and_modify = reload_extract_and_modify(
+        monkeypatch,
+        COORDINATE_ENGINE="nelder_mead",
+        **fast_nelder_mead_env,
+    )
+    _, result_variables, found = extract_and_modify(
+        coordinates, condition_code, variables.copy()
+    )
+
+    assert found is True
+    assert_feasible(condition_code, coordinates, result_variables)
+    assert abs(_resolved_distance(coordinates, result_variables, "D", "G") - 0.4) < 0.05
+
+
 def test_add_on_circle_dist_constraints_does_not_duplicate():
     from geo.Auxiliary_function import add_on_circle_dist_constraints
 

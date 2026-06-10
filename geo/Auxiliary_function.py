@@ -216,6 +216,72 @@ def _parse_conditions_text(conditions_str, radius=None):
     return conditions, calculate_point_conditions
 
 
+def _coord_is_numeric(value):
+    return not isinstance(value, str)
+
+
+def _segment_axis(dx, dy, eps=1e-9):
+    if abs(dy) < eps:
+        return "horizontal"
+    if abs(dx) < eps:
+        return "vertical"
+    return "diagonal"
+
+
+def fix_online_inside_coordinates(coordinates, _variables, conditions):
+    """Align segment-point parameterization with the segment direction.
+
+    Square problems often place E on the wrong edge, e.g. E=(0.5, e) when BC is
+    horizontal and E should be (e, 0.5).
+    """
+    for cond in conditions:
+        if cond[0] not in {"online_inside", "online", "online_extension"}:
+            continue
+        params = cond[1]
+        if len(params) != 3:
+            continue
+        point_name, seg_a, seg_b = params
+        if point_name not in coordinates:
+            continue
+        if seg_a not in coordinates or seg_b not in coordinates:
+            continue
+
+        seg_start = coordinates[seg_a]
+        seg_end = coordinates[seg_b]
+        point = coordinates[point_name]
+        if not all(_coord_is_numeric(v) for v in seg_start + seg_end):
+            continue
+
+        ax, ay = float(seg_start[0]), float(seg_start[1])
+        bx, by = float(seg_end[0]), float(seg_end[1])
+        px, py = point[0], point[1]
+        px_var = isinstance(px, str)
+        py_var = isinstance(py, str)
+        if px_var == py_var:
+            continue
+
+        var_name = px if px_var else py
+        axis = _segment_axis(bx - ax, by - ay)
+        if axis == "horizontal":
+            if px_var:
+                continue
+            fixed_y = ay
+            coordinates[point_name] = (var_name, fixed_y)
+            print(
+                f"[fix] {point_name} on {seg_a}{seg_b}: "
+                f"({px}, {py}) -> ({var_name}, {fixed_y})"
+            )
+        elif axis == "vertical":
+            if py_var:
+                continue
+            fixed_x = ax
+            coordinates[point_name] = (fixed_x, var_name)
+            print(
+                f"[fix] {point_name} on {seg_a}{seg_b}: "
+                f"({px}, {py}) -> ({fixed_x}, {var_name})"
+            )
+
+
 def convert_conditions(text, variables, coordinates, conditions_data, radius=None):
     conditions = []
     calculate_point_conditions = []
@@ -236,6 +302,9 @@ def convert_conditions(text, variables, coordinates, conditions_data, radius=Non
     else:
         print(f"不支持的 conditions_data 类型: {type(conditions_data)}")
         return coordinates, variables, [], []
+
+    fix_online_inside_coordinates(coordinates, variables, conditions)
+
     for cond in reversed(conditions):
         # check wirh LLM whether the condition is right or not
         condition_right = LLM_check(text,cond)

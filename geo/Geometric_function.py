@@ -63,17 +63,16 @@ POINT_CLOSE_TOLERANCE = 0.1
 
 
 def check_point_different(point_list):
-    point_num = len(point_list)
-    point = point_list[0]
     close_tolerance = POINT_CLOSE_TOLERANCE
-    for i in range(1, point_num):
-        # 检查 AB 和 CD 的端点是否相近
-        if (abs(point[0] - point_list[i][0]) < close_tolerance and abs(point[1] - point_list[i][1]) < close_tolerance):
-            return False
-    if point_num == 2:
-        return True
-    else:
-        return check_point_different(point_list[1:])
+    for i in range(len(point_list)):
+        for j in range(i + 1, len(point_list)):
+            gap = math.hypot(
+                point_list[i][0] - point_list[j][0],
+                point_list[i][1] - point_list[j][1],
+            )
+            if gap < close_tolerance:
+                return False
+    return True
 
 
 def check_coordinates_distinct(coordinates, variables):
