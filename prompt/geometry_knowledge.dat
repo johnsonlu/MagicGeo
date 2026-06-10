@@ -55,9 +55,11 @@ line_ratio(D, C, B, D, m):
 
 is_point_in_triangle(A, B, C, P):
 - 点在三角形内部：若 P 在 △ABC 内，写作 'is_point_in_triangle': is_point_in_triangle(A, B, C, P)。
+- 注意：参数顺序必须是 (三角形顶点1, 三角形顶点2, 三角形顶点3, 待检测点)，即前三个参数定义三角形，最后一个参数 P 是被检测的点。
 
 is_point_out_triangle(A, B, C, P):
 - 点在三角形外部：若 P 在 △ABC 外，写作 'is_point_out_triangle': is_point_out_triangle(A, B, C, P)。
+- 注意：参数顺序必须是 (三角形顶点1, 三角形顶点2, 三角形顶点3, 待检测点)，即前三个参数定义三角形，最后一个参数 P 是被检测的点。
 
 is_acute_triangle(A, B, C):
 - 锐角三角形：若 △ABC 是锐角三角形，写作 'is_acute_triangle': is_acute_triangle(A, B, C)。

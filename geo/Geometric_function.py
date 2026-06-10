@@ -657,11 +657,15 @@ def calc_var_from_dist(a,b,c,dist_val):
 
 def is_point_in_triangle(variables, A, B, C, P, coordinates):
     """
-    优化判断点 P 是否在三角形 ABC 内部的函数，使用向量叉积法。
+    判断点 P 是否在三角形 ABC 内部，使用向量叉积法。
+
+    参数顺序: (三角形顶点A, 三角形顶点B, 三角形顶点C, 待检测点P)
+    前三个参数定义三角形，最后一个参数 P 是被检测的点。
 
     参数:
         variables (dict): 包含变量及其状态的字典。
-        A, B, C, P: 点的坐标或变量名。
+        A, B, C: 三角形的三个顶点。
+        P: 待检测的点。
 
     返回:
         tuple: 一个布尔值和计算状态。如果 P 在三角形 ABC 内部，返回 True 和计算状态；
@@ -726,14 +730,18 @@ def line_ratio(variables, A, B, F, G, k, coordinates):
 
 def is_point_out_triangle(variables, A, B, C, P, coordinates):
     """
-    优化判断点 P 是否在三角形 ABC 内部的函数，使用向量叉积法。
+    判断点 P 是否在三角形 ABC 外部，使用向量叉积法。
+
+    参数顺序: (三角形顶点A, 三角形顶点B, 三角形顶点C, 待检测点P)
+    前三个参数定义三角形，最后一个参数 P 是被检测的点。
 
     参数:
         variables (dict): 包含变量及其状态的字典。
-        A, B, C, P: 点的坐标或变量名。
+        A, B, C: 三角形的三个顶点。
+        P: 待检测的点。
 
     返回:
-        tuple: 一个布尔值和计算状态。如果 P 在三角形 ABC 内部，返回 True 和计算状态；
+        tuple: 一个布尔值和计算状态。如果 P 在三角形 ABC 外部，返回 True 和计算状态；
                否则返回 False 和计算状态。
     """
     # 检查所有点是否可以进行计算

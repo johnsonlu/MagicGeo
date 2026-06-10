@@ -180,6 +180,7 @@ def _constraint_residual(func_name, params, variables, coordinates):
         points = _resolve_points(variables, coordinates, params)
         if points is None:
             return None
+        # Convention: first 3 params define triangle (A,B,C), last param is test point (P)
         A, B, C, P = points
         def _cross(O, X, Y):
             return (X[0] - O[0]) * (Y[1] - O[1]) - (X[1] - O[1]) * (Y[0] - O[0])
@@ -205,6 +206,7 @@ def _constraint_residual(func_name, params, variables, coordinates):
         points = _resolve_points(variables, coordinates, params)
         if points is None:
             return None
+        # Convention: first 3 params define triangle (A,B,C), last param is test point (P)
         A, B, C, P = points
         def _cross(O, X, Y):
             return (X[0] - O[0]) * (Y[1] - O[1]) - (X[1] - O[1]) * (Y[0] - O[0])
@@ -216,7 +218,6 @@ def _constraint_residual(func_name, params, variables, coordinates):
         d2 = sign * _cross(B, C, P) / math.hypot(C[0] - B[0], C[1] - B[1])
         d3 = sign * _cross(C, A, P) / math.hypot(A[0] - C[0], A[1] - C[1])
         if d1 >= 0 and d2 >= 0 and d3 >= 0:
-            # Inside: penalize by closest edge (must cross to get out)
             return min(d1, d2, d3) ** 2
         return 0.0
 
@@ -348,6 +349,48 @@ def _resolve_known_points(coordinates):
     return resolved
 
 
+_CIRCLE_CONSTRAINT_RE = re.compile(
+    r"^dist\(variables,coordinates\['(\w+)'\],coordinates\['(\w+)'\],([\d.]+),coordinates\)$"
+)
+
+
+def _detect_circle_constraints(condition_code, coordinates):
+    """Find groups of unknown points pinned to the same circle.
+
+    Returns a list of (center_xy, radius, [var_x_key, var_y_key, ...]) tuples.
+    Each entry in the var list is a (x_key, y_key) pair for an unknown point
+    that must lie on that circle.
+    """
+    # Map: (center_name, radius) -> [point_names]
+    circles = {}
+    for code in condition_code:
+        m = _CIRCLE_CONSTRAINT_RE.match(code.strip())
+        if not m:
+            continue
+        center_name, point_name, radius_str = m.group(1), m.group(2), float(m.group(3))
+        # Center must be a known (fully numeric) point
+        if center_name not in coordinates:
+            continue
+        cx, cy = coordinates[center_name]
+        if isinstance(cx, str) or isinstance(cy, str):
+            continue
+        # Point must have unknown variables
+        if point_name not in coordinates:
+            continue
+        px, py = coordinates[point_name]
+        if not isinstance(px, str) and not isinstance(py, str):
+            continue
+        key = (center_name, radius_str)
+        circles.setdefault(key, []).append((point_name, radius_str))
+
+    # Group by circle: return structured info
+    result = []
+    for (center_name, radius), points in circles.items():
+        cx, cy = coordinates[center_name]
+        result.append(((float(cx), float(cy)), radius, points))
+    return result
+
+
 def extract_and_modify_nelder_mead(coordinates, condition_code, variables):
     key_list = list(variables.keys())
     if not key_list:
@@ -366,6 +409,40 @@ def extract_and_modify_nelder_mead(coordinates, condition_code, variables):
     centroid_y = sum(p[1] for p in known_points) / len(known_points) if known_points else 0.0
     n_vars = len(key_list)
 
+    # Detect circle constraints for smart seeding
+    circle_constraints = _detect_circle_constraints(condition_code, coordinates)
+    # Build circle-aware seeds: place unknown points on their circles
+    # at evenly-spaced base angles with random jitter for diversity
+    circle_seeds = []
+    if circle_constraints:
+        n_circle_seeds = max(0, min(6, NELDER_MEAD_RESTARTS - 2))
+        for seed_idx in range(n_circle_seeds):
+            base_angle = (2 * math.pi * seed_idx) / n_circle_seeds
+            # Add jitter so seeds explore a range of angles, not just fixed slots
+            jitter = rng.uniform(-math.pi / n_circle_seeds, math.pi / n_circle_seeds) if n_circle_seeds > 1 else rng.uniform(-math.pi, math.pi)
+            seed_values = {}
+            for (cx, cy), radius, points in circle_constraints:
+                for i, (point_name, _r) in enumerate(points):
+                    spread = (2 * math.pi * i) / max(len(points), 1)
+                    angle_offset = base_angle + spread + jitter
+                    # Find variable keys for this point's coordinates
+                    px_ref, py_ref = coordinates[point_name]
+                    if isinstance(px_ref, str) and px_ref in key_list:
+                        seed_values[px_ref] = cx + radius * math.cos(angle_offset)
+                    if isinstance(py_ref, str) and py_ref in key_list:
+                        seed_values[py_ref] = cy + radius * math.sin(angle_offset)
+            # For non-circle variables, use centroid or origin
+            seed = np.empty(n_vars)
+            for i, key in enumerate(key_list):
+                if key in seed_values:
+                    seed[i] = seed_values[key]
+                elif i % 2 == 0:
+                    seed[i] = centroid_x + rng.normal(0, 0.2)
+                else:
+                    seed[i] = centroid_y + rng.normal(0, 0.2)
+            seed = np.clip(seed, COORDINATE_LOW, COORDINATE_HIGH)
+            circle_seeds.append(seed)
+
     def objective(values):
         values = np.clip(values, COORDINATE_LOW, COORDINATE_HIGH)
         state = _apply_values(variables, key_list, values)
@@ -375,14 +452,17 @@ def extract_and_modify_nelder_mead(coordinates, condition_code, variables):
         if time.monotonic() >= deadline:
             break
 
-        # Seed strategy: geometric for first 2 (if centroid is away from origin),
-        # then adaptive/random mix
-        use_geometric = (
-            restart < 2
-            and known_points
+        # Seed strategy:
+        # 1. Circle-aware seeds (if available)
+        # 2. Geometric seed near centroid (if centroid away from origin)
+        # 3. Adaptive perturbation of best_x / random
+        if restart < len(circle_seeds):
+            x0 = circle_seeds[restart]
+        elif (
+            known_points
             and math.hypot(centroid_x, centroid_y) > 0.3
-        )
-        if use_geometric:
+            and restart < len(circle_seeds) + 2
+        ):
             x0 = np.empty(n_vars)
             for i in range(n_vars):
                 if i % 2 == 0:
