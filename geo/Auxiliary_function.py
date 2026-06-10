@@ -472,41 +472,83 @@ def _partition_satisfied_conditions(conditions, variables, coordinates):
     return list(reversed(conditions_execute))
 
 
-def convert_conditions(text, variables, coordinates, conditions_data, radius=None):
+def _append_valid_condition(
+    function_name, params, radius, conditions, calculate_point_conditions
+):
+    if not check_function_format(function_name, params, radius):
+        return
+    entry = [function_name, params]
+    if function_name in calculate_point_function:
+        calculate_point_conditions.append(entry)
+    else:
+        conditions.append(entry)
+
+
+def _parse_conditions_dict(conditions_data, radius):
     conditions = []
     calculate_point_conditions = []
-
-    if isinstance(conditions_data, dict):
-        for cid, cond in conditions_data.items():
-            if not cond or len(cond) < 2:
-                continue
-            function_name = cond[0]
-            params = cond[1:]
-            if check_function_format(function_name, params, radius):
-                if function_name in calculate_point_function:
-                    calculate_point_conditions.append([function_name, params])
-                else:
-                    conditions.append([function_name, params])
-    elif isinstance(conditions_data, str):
-        conditions, calculate_point_conditions = _parse_conditions_text(
-            conditions_data, radius
+    for cond in conditions_data.values():
+        if not cond or len(cond) < 2:
+            continue
+        _append_valid_condition(
+            cond[0], cond[1:], radius, conditions, calculate_point_conditions
         )
-    else:
-        print(f"不支持的 conditions_data 类型: {type(conditions_data)}")
-        return coordinates, variables, [], []
+    return conditions, calculate_point_conditions
 
-    fix_online_inside_coordinates(coordinates, variables, conditions)
 
+def _parse_conditions_input(conditions_data, radius):
+    if isinstance(conditions_data, dict):
+        return _parse_conditions_dict(conditions_data, radius)
+    if isinstance(conditions_data, str):
+        return _parse_conditions_text(conditions_data, radius)
+    print(f"不支持的 conditions_data 类型: {type(conditions_data)}")
+    return None
+
+
+def _apply_llm_condition_filter(text, conditions):
     kept = filter_conditions_with_llm(text, conditions)
     for cond in conditions:
         if cond not in kept:
             print(f"check with LLM, delete condition: {cond}")
-    conditions = kept
+    return kept
 
+
+def _enrich_geometry_conditions(text, coordinates, conditions, radius):
     conditions = add_on_circle_dist_constraints(
         text, coordinates, conditions, radius=radius
     )
-    conditions = add_parallelogram_parallel_constraints(text, coordinates, conditions)
+    return add_parallelogram_parallel_constraints(text, coordinates, conditions)
+
+
+def _apply_derived_point_conditions(calculate_point_conditions, coordinates, variables):
+    derived_points = set()
+    for cond_key, cond_value in calculate_point_conditions:
+        depend_point = cond_value[0]
+        if depend_point in derived_points:
+            continue
+        point_coords = coordinates[depend_point]
+        if len(point_coords) >= 2:
+            for axis in (0, 1):
+                var_name = point_coords[axis]
+                if var_name in variables:
+                    del variables[var_name]
+        del coordinates[depend_point]
+        dependences = f"calc_{cond_key}(variables,"
+        for index in range(1, len(cond_value)):
+            dependences += f"coordinates['{cond_value[index]}'],"
+        coordinates[depend_point] = [dependences + "coordinates)"]
+        derived_points.add(depend_point)
+
+
+def convert_conditions(text, variables, coordinates, conditions_data, radius=None):
+    parsed = _parse_conditions_input(conditions_data, radius)
+    if parsed is None:
+        return coordinates, variables, [], []
+    conditions, calculate_point_conditions = parsed
+
+    fix_online_inside_coordinates(coordinates, variables, conditions)
+    conditions = _apply_llm_condition_filter(text, conditions)
+    conditions = _enrich_geometry_conditions(text, coordinates, conditions, radius)
 
     conditions_execute = _partition_satisfied_conditions(
         conditions, variables, coordinates
@@ -514,37 +556,15 @@ def convert_conditions(text, variables, coordinates, conditions_data, radius=Non
     if conditions_execute is None:
         return coordinates, variables, [], []
 
-    # 可计算点替换为函数
-    derived_points = set()
-    for cond in calculate_point_conditions:
-        cond_key = cond[0]
-        cond_value = cond[1]
-        depend_point = cond_value[0]
-        if depend_point in derived_points:
-            continue
-        point_coords = coordinates[depend_point]
-        if len(point_coords) >= 2:
-            if point_coords[0] in variables:
-                del variables[point_coords[0]]
-            if point_coords[1] in variables:
-                del variables[point_coords[1]]
-        del coordinates[depend_point]
-        dependences = f"calc_{cond_key}(variables,"
-        for index in range(1, len(cond_value)):
-            dependences += f"coordinates['{cond_value[index]}'],"
-        coordinates[depend_point] = [dependences + "coordinates)"]
-        derived_points.add(depend_point)
-    print(coordinates)
-    print(variables)
-
-    print(calculate_point_conditions)
-    print(conditions_execute)
+    _apply_derived_point_conditions(calculate_point_conditions, coordinates, variables)
+    print("[convert_conditions] coordinates:", coordinates)
+    print("[convert_conditions] variables:", variables)
+    print("[convert_conditions] calculate_point_conditions:", calculate_point_conditions)
+    print("[convert_conditions] conditions_execute:", conditions_execute)
     return coordinates, variables, calculate_point_conditions, conditions_execute
 
 
 """利用对应格式的字典生成变量"""
-
-
 def convert_coordinates(coordinates, radius=None):
     def register_radius_variable():
         if "r" not in variable_names:
