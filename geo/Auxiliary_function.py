@@ -565,53 +565,65 @@ def convert_conditions(text, variables, coordinates, conditions_data, radius=Non
 
 
 """利用对应格式的字典生成变量"""
+
+
+def _ensure_radius_variable(variable_names):
+    if "r" not in variable_names:
+        variable_names["r"] = [0, False]
+
+
+def _resolve_radius_literal(value, radius, variable_names):
+    if value == "r":
+        if radius is not None:
+            return radius, False
+        _ensure_radius_variable(variable_names)
+        return "r", True
+    if value == "-r":
+        if radius is not None:
+            return -radius, False
+        _ensure_radius_variable(variable_names)
+        return "-r", True
+    return None
+
+
+def _parse_coordinate_value(value, radius, variable_names):
+    value = normalize_radius_symbol(value)
+    radius_literal = _resolve_radius_literal(value, radius, variable_names)
+    if radius_literal is not None:
+        return radius_literal
+    if is_r_dependent_expression(value):
+        if radius is not None:
+            return evaluate_radius_expression(value, radius), False
+        _ensure_radius_variable(variable_names)
+        return value, True
+    try:
+        return float(value), False
+    except ValueError:
+        if value not in variable_names:
+            variable_names[value] = [0, False]
+        return value, True
+
+
+def _iter_coordinate_parts(value):
+    if isinstance(value, (tuple, list)):
+        return (str(part).strip() for part in value)
+    return (part.strip() for part in value.split(","))
+
+
+def _convert_coordinate_tuple(value, radius, variable_names):
+    return tuple(
+        _parse_coordinate_value(part, radius, variable_names)[0]
+        for part in _iter_coordinate_parts(value)
+    )
+
+
 def convert_coordinates(coordinates, radius=None):
-    def register_radius_variable():
-        if "r" not in variable_names:
-            variable_names["r"] = [0, False]
-
-    def parse_value(value):
-        value = normalize_radius_symbol(value)
-        if value == "r":
-            if radius is not None:
-                return radius, False
-            register_radius_variable()
-            return "r", True
-        if value == "-r":
-            if radius is not None:
-                return -radius, False
-            register_radius_variable()
-            return "-r", True
-        if is_r_dependent_expression(value):
-            if radius is not None:
-                return evaluate_radius_expression(value, radius), False
-            register_radius_variable()
-            return value, True
-        try:
-            return float(value), False
-        except ValueError:
-            if value not in variable_names:
-                variable_names[value] = [0, False]
-            return value, True
-
     converted_coords = {}
     variable_names = {}
-
     for key, value in coordinates.items():
-        if isinstance(value, (tuple, list)):
-            coord_value = []
-            for v in value:
-                parsed, _is_string = parse_value(str(v).strip())
-                coord_value.append(parsed)
-            converted_coords[key] = tuple(coord_value)
-        else:
-            parts = value.split(",")
-            coord_value = []
-            for part in parts:
-                parsed, _is_string = parse_value(part.strip())
-                coord_value.append(parsed)
-            converted_coords[key] = tuple(coord_value)
-
+        converted_coords[key] = _convert_coordinate_tuple(
+            value, radius, variable_names
+        )
     return sanitize_compound_coordinate_variables(converted_coords, variable_names)
 
 
