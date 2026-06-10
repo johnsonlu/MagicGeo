@@ -436,6 +436,47 @@ def test_quadrangle_problem_0_solves_after_online_inside_fix(
     assert abs(_resolved_distance(coordinates, result_variables, "D", "G") - 0.4) < 0.05
 
 
+def test_quadrangle_problem_1_solves_with_midpoint_soft_residual(
+    monkeypatch, fast_nelder_mead_env
+):
+    from geo.Auxiliary_function import convert_conditions, convert_coordinates
+
+    text = "在矩形ABCD中，AC与BD相交于点O，连接AC,BD。"
+    result = {
+        "coordinates": {
+            "A": [0, 0],
+            "B": ["a", 0],
+            "C": ["a", "b"],
+            "D": [0, "b"],
+            "O": ["a/2", "b/2"],
+        },
+        "conditions": {
+            "c1": ["ortho", "A", "B", "A", "D"],
+            "c2": ["parallel", "A", "B", "D", "C"],
+            "c3": ["parallel", "A", "D", "B", "C"],
+            "c4": ["midpoint", "O", "A", "C"],
+            "c5": ["midpoint", "O", "B", "D"],
+        },
+    }
+
+    coordinates, variables = convert_coordinates(result["coordinates"])
+    coordinates, variables, _, condition_code = convert_conditions(
+        text, variables, coordinates, result["conditions"]
+    )
+
+    extract_and_modify = reload_extract_and_modify(
+        monkeypatch,
+        COORDINATE_ENGINE="nelder_mead",
+        **fast_nelder_mead_env,
+    )
+    _, result_variables, found = extract_and_modify(
+        coordinates, condition_code, variables.copy()
+    )
+
+    assert found is True
+    assert_feasible(condition_code, coordinates, result_variables)
+
+
 def test_add_on_circle_dist_constraints_does_not_duplicate():
     from geo.Auxiliary_function import add_on_circle_dist_constraints
 
@@ -455,6 +496,24 @@ def test_add_on_circle_dist_constraints_does_not_duplicate():
 def _make_code(func_name, *point_names):
     coords = ",".join(f"coordinates['{p}']" for p in point_names)
     return f"{func_name}(variables,{coords},coordinates)"
+
+
+class TestMidpointSoftResidual:
+    def test_zero_when_satisfied(self):
+        from geo.coordinate_engine_config import BOOLEAN_PENALTY
+        from geo.nelder_mead_engine import _constraint_contribution
+
+        coords = _make_coords(A=(1.0, 1.0), B=(0.0, 0.0), C=(2.0, 2.0))
+        code = _make_code("midpoint", "A", "B", "C")
+        assert _constraint_contribution(code, {}, coords, BOOLEAN_PENALTY) == 0.0
+
+    def test_positive_when_off_midpoint(self):
+        from geo.coordinate_engine_config import BOOLEAN_PENALTY
+        from geo.nelder_mead_engine import _constraint_contribution
+
+        coords = _make_coords(A=(1.5, 1.0), B=(0.0, 0.0), C=(2.0, 2.0))
+        code = _make_code("midpoint", "A", "B", "C")
+        assert _constraint_contribution(code, {}, coords, BOOLEAN_PENALTY) > 0.0
 
 
 def _make_coords(**pts):

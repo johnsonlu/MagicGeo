@@ -25,4 +25,5 @@ CONTINUOUS_CONSTRAINTS = frozenset({
     "is_acute_triangle",
     "angle_bisector",
     "arc_midpoint",
+    "midpoint",
 })

@@ -61,7 +61,8 @@ def analyze_geometry_context(text):
         "你是一个几何专家。请分析给出的数学题，并以 JSON 格式输出以下信息：\n"
         "1. type: 图形类型(circle/triangle/quad/mixed)\n"
         "2. radius: 如果涉及圆，提取半径数值；如果不确定但有半径概念，设为 1.0；否则为 null\n"
-        "3. suggestions: 针对该图形的坐标设置建议（例如：'设圆心O为(0,0)', '设A为(0,0)'）\n"
+        "3. suggestions: 针对该图形的基本顶点坐标系建议（例如：'设圆心O为(0,0)', '设A为(0,0)'）。"
+        "只建议顶点/圆心等基础点的坐标，不要写中点或交点的推导坐标（如 a/2、b/2）。\n"
         "4. is_circle: 布尔值，是否包含圆"
     )
 
@@ -149,12 +150,15 @@ def process_geometry_task(item, generic_knowledge, output_dir=None):
 
     instruct = (
         "根据数学几何题意和辅助信息，输出 JSON，包含以下两个字段：\n"
-        "1. coordinates: 字典，键为点名称，值为 [x, y] 数组（已知用数字，未知用变量名）\n"
+        "1. coordinates: 字典，键为点名称，值为 [x, y] 数组（已知用数字，未知用单个变量名）。"
+        "变量名只能是简单标识符（如 a、b、m、n、ox、oy），禁止算术表达式（如 a/2、2*a、a+b）。"
+        "由 midpoint、online_inside 等条件确定的点，用独立变量表示，不要写推导坐标。\n"
         "2. conditions: 字典，键为条件编号，值为 [函数名, 参数1, 参数2, ...] 数组\n"
         "3. 若题目明确点在某圆（⊙O）上，除角度/弧中点等条件外，还必须为每个圆上点添加 "
         "'dist': ['dist', 'O', '点名称', 'r']（半径用 r，与坐标中的 r 一致）\n"
         "示例：{\"coordinates\": {\"O\": [0, 0], \"A\": [\"r\", 0], \"B\": [\"a\", \"b\"]}, "
-        "\"conditions\": {\"c1\": [\"dist\", \"O\", \"A\", \"r\"], \"c2\": [\"angle\", \"B\", \"A\", \"C\", 35]}}"
+        "\"conditions\": {\"c1\": [\"dist\", \"O\", \"A\", \"r\"], \"c2\": [\"angle\", \"B\", \"A\", \"C\", 35]}}\n"
+        "矩形对角线交点示例：O 写 [\"m\", \"n\"]，配合 midpoint(O,A,C) 和 midpoint(O,B,D)，不要写 [\"a/2\", \"b/2\"]。"
     )
 
     full_prompt = f"{generic_knowledge}\n\n当前题目辅助背景：{extra_info}"

@@ -176,6 +176,19 @@ def _constraint_residual(func_name, params, variables, coordinates):
         normalizer = max(norm_ab * norm_cd, 0.1)
         return (cross / normalizer) ** 2
 
+    if func_name == "midpoint" and len(params) == 3:
+        points = _resolve_points(variables, coordinates, params)
+        if points is None:
+            return None
+        a, b, c = points
+        mid_x = (b[0] + c[0]) / 2
+        mid_y = (b[1] + c[1]) / 2
+        span = math.hypot(c[0] - b[0], c[1] - b[1])
+        normalizer = max(span, 0.1)
+        dx = a[0] - mid_x
+        dy = a[1] - mid_y
+        return (dx / normalizer) ** 2 + (dy / normalizer) ** 2
+
     if func_name == "is_point_in_triangle" and len(params) == 4:
         points = _resolve_points(variables, coordinates, params)
         if points is None:
