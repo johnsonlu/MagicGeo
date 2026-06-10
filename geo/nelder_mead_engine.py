@@ -65,235 +65,302 @@ def _calculate_angle_deg(v1, v2):
     return math.degrees(math.acos(cos_angle))
 
 
-def _constraint_residual(func_name, params, variables, coordinates):
-    if func_name == "dist" and len(params) == 3:
-        points = _resolve_points(variables, coordinates, params[:2])
-        if points is None:
-            return None
-        a, b = points
-        target = params[2]
-        actual = math.hypot(a[0] - b[0], a[1] - b[1])
-        normalizer = max(target, 0.1)
-        return ((actual - target) / normalizer) ** 2
+def _cross_2d(origin, x, y):
+    return (x[0] - origin[0]) * (y[1] - origin[1]) - (x[1] - origin[1]) * (
+        y[0] - origin[0]
+    )
 
-    if func_name == "angle" and len(params) == 4:
-        points = _resolve_points(variables, coordinates, params[:3])
-        if points is None:
-            return None
-        b, a, c = points
-        expected_angle = params[3]
-        ab = (b[0] - a[0], b[1] - a[1])
-        ac = (c[0] - a[0], c[1] - a[1])
-        angle_deg = _calculate_angle_deg(ab, ac)
-        return ((angle_deg - expected_angle) / 180) ** 2
 
-    if func_name == "equal_line" and len(params) == 4:
-        points = _resolve_points(variables, coordinates, params)
-        if points is None:
-            return None
-        a, b, c, d = points
-        dist_ab_sq = (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2
-        dist_cd_sq = (c[0] - d[0]) ** 2 + (c[1] - d[1]) ** 2
-        normalizer = max(dist_ab_sq, dist_cd_sq, 0.1)
-        return ((dist_ab_sq - dist_cd_sq) / normalizer) ** 2
+def _squared_segment_distances_sq(a, b):
+    return (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2
 
-    if func_name == "line_ratio" and len(params) == 5:
-        points = _resolve_points(variables, coordinates, params[:4])
-        if points is None:
-            return None
-        a, b, f, g = points
-        k = params[4]
-        dist_ab_sq = (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2
-        dist_fg_sq = (f[0] - g[0]) ** 2 + (f[1] - g[1]) ** 2
-        expected = dist_ab_sq * (k**2)
-        normalizer = max(expected, 0.1)
-        return ((dist_fg_sq - expected) / normalizer) ** 2
 
-    if func_name == "angle_relation" and len(params) == 7:
-        points = _resolve_points(variables, coordinates, params[:6])
-        if points is None:
-            return None
-        a, b, c, d, e, f = points
-        ratio = params[6]
-        ba = (a[0] - b[0], a[1] - b[1])
-        bc = (c[0] - b[0], c[1] - b[1])
-        ed = (d[0] - e[0], d[1] - e[1])
-        ef = (f[0] - e[0], f[1] - e[1])
-        angle_abc = _calculate_angle_deg(ba, bc)
-        angle_def = _calculate_angle_deg(ed, ef)
-        return ((angle_abc - ratio * angle_def) / 180) ** 2
+def _triangle_edge_distances(triangle, point):
+    a, b, c = triangle
+    orient = _cross_2d(a, b, c)
+    if abs(orient) < 1e-10:
+        return orient, ()
+    sign = 1.0 if orient > 0 else -1.0
+    return orient, (
+        sign * _cross_2d(a, b, point) / math.hypot(b[0] - a[0], b[1] - a[1]),
+        sign * _cross_2d(b, c, point) / math.hypot(c[0] - b[0], c[1] - b[1]),
+        sign * _cross_2d(c, a, point) / math.hypot(a[0] - c[0], a[1] - c[1]),
+    )
 
-    if func_name == "ortho" and len(params) == 4:
-        points = _resolve_points(variables, coordinates, params)
-        if points is None:
-            return None
-        a, b, e, f = points
-        ab = (b[0] - a[0], b[1] - a[1])
-        ef = (f[0] - e[0], f[1] - e[1])
-        dot_product = ab[0] * ef[0] + ab[1] * ef[1]
-        norm_ab = math.hypot(ab[0], ab[1])
-        norm_ef = math.hypot(ef[0], ef[1])
-        normalizer = max(norm_ab * norm_ef, 0.1)
-        return (dot_product / normalizer) ** 2
 
-    if (
-        func_name in {"online", "online_inside", "online_extension"}
-        and len(params) == 3
-    ):
-        points = _resolve_points(variables, coordinates, params)
-        if points is None:
-            return None
-        b, e, f = points
-        line_len = math.hypot(f[0] - e[0], f[1] - e[1])
-        normalizer = max(line_len, 0.1)
-        residual = (point_to_line_distance(b, e, f) / normalizer) ** 2
-        if func_name == "online":
-            return residual
+def _dist_residual(params, variables, coordinates):
+    if len(params) != 3:
+        return None
+    points = _resolve_points(variables, coordinates, params[:2])
+    if points is None:
+        return None
+    a, b = points
+    target = params[2]
+    actual = math.hypot(a[0] - b[0], a[1] - b[1])
+    normalizer = max(target, 0.1)
+    return ((actual - target) / normalizer) ** 2
 
-        if x_f := f[0] - e[0]:
-            k = (b[0] - e[0]) / x_f
-        elif y_f := f[1] - e[1]:
-            k = (b[1] - e[1]) / y_f
-        else:
-            return residual + 1.0
 
-        if func_name == "online_inside":
-            if k <= 0:
-                residual += k**2
-            elif k >= 1:
-                residual += (k - 1) ** 2
-        elif func_name == "online_extension":
-            if 0 <= k <= 1:
-                residual += min(k, 1 - k) ** 2
+def _angle_residual(params, variables, coordinates):
+    if len(params) != 4:
+        return None
+    points = _resolve_points(variables, coordinates, params[:3])
+    if points is None:
+        return None
+    b, a, c = points
+    expected_angle = params[3]
+    ab = (b[0] - a[0], b[1] - a[1])
+    ac = (c[0] - a[0], c[1] - a[1])
+    angle_deg = _calculate_angle_deg(ab, ac)
+    return ((angle_deg - expected_angle) / 180) ** 2
+
+
+def _equal_line_residual(params, variables, coordinates):
+    if len(params) != 4:
+        return None
+    points = _resolve_points(variables, coordinates, params)
+    if points is None:
+        return None
+    a, b, c, d = points
+    dist_ab_sq = _squared_segment_distances_sq(a, b)
+    dist_cd_sq = _squared_segment_distances_sq(c, d)
+    normalizer = max(dist_ab_sq, dist_cd_sq, 0.1)
+    return ((dist_ab_sq - dist_cd_sq) / normalizer) ** 2
+
+
+def _line_ratio_residual(params, variables, coordinates):
+    if len(params) != 5:
+        return None
+    points = _resolve_points(variables, coordinates, params[:4])
+    if points is None:
+        return None
+    a, b, f, g = points
+    k = params[4]
+    dist_ab_sq = _squared_segment_distances_sq(a, b)
+    dist_fg_sq = _squared_segment_distances_sq(f, g)
+    expected = dist_ab_sq * (k**2)
+    normalizer = max(expected, 0.1)
+    return ((dist_fg_sq - expected) / normalizer) ** 2
+
+
+def _angle_relation_residual(params, variables, coordinates):
+    if len(params) != 7:
+        return None
+    points = _resolve_points(variables, coordinates, params[:6])
+    if points is None:
+        return None
+    a, b, c, d, e, f = points
+    ratio = params[6]
+    ba = (a[0] - b[0], a[1] - b[1])
+    bc = (c[0] - b[0], c[1] - b[1])
+    ed = (d[0] - e[0], d[1] - e[1])
+    ef = (f[0] - e[0], f[1] - e[1])
+    angle_abc = _calculate_angle_deg(ba, bc)
+    angle_def = _calculate_angle_deg(ed, ef)
+    return ((angle_abc - ratio * angle_def) / 180) ** 2
+
+
+def _ortho_residual(params, variables, coordinates):
+    if len(params) != 4:
+        return None
+    points = _resolve_points(variables, coordinates, params)
+    if points is None:
+        return None
+    a, b, e, f = points
+    ab = (b[0] - a[0], b[1] - a[1])
+    ef = (f[0] - e[0], f[1] - e[1])
+    dot_product = ab[0] * ef[0] + ab[1] * ef[1]
+    norm_ab = math.hypot(ab[0], ab[1])
+    norm_ef = math.hypot(ef[0], ef[1])
+    normalizer = max(norm_ab * norm_ef, 0.1)
+    return (dot_product / normalizer) ** 2
+
+
+def _segment_parameter_k(point, seg_start, seg_end):
+    if x_f := seg_end[0] - seg_start[0]:
+        return (point[0] - seg_start[0]) / x_f
+    if y_f := seg_end[1] - seg_start[1]:
+        return (point[1] - seg_start[1]) / y_f
+    return None
+
+
+def _online_residual(mode, params, variables, coordinates):
+    if len(params) != 3:
+        return None
+    points = _resolve_points(variables, coordinates, params)
+    if points is None:
+        return None
+    b, e, f = points
+    line_len = math.hypot(f[0] - e[0], f[1] - e[1])
+    normalizer = max(line_len, 0.1)
+    residual = (point_to_line_distance(b, e, f) / normalizer) ** 2
+    if mode == "online":
         return residual
 
-    if func_name == "parallel" and len(params) == 4:
-        points = _resolve_points(variables, coordinates, params)
-        if points is None:
-            return None
-        a, b, c, d = points
-        # Cross product of direction vectors: zero when parallel
-        cross = (b[0] - a[0]) * (d[1] - c[1]) - (b[1] - a[1]) * (d[0] - c[0])
-        norm_ab = math.hypot(b[0] - a[0], b[1] - a[1])
-        norm_cd = math.hypot(d[0] - c[0], d[1] - c[1])
-        normalizer = max(norm_ab * norm_cd, 0.1)
-        return (cross / normalizer) ** 2
+    k = _segment_parameter_k(b, e, f)
+    if k is None:
+        return residual + 1.0
 
-    if func_name == "midpoint" and len(params) == 3:
-        points = _resolve_points(variables, coordinates, params)
-        if points is None:
-            return None
-        a, b, c = points
-        mid_x = (b[0] + c[0]) / 2
-        mid_y = (b[1] + c[1]) / 2
-        span = math.hypot(c[0] - b[0], c[1] - b[1])
-        normalizer = max(span, 0.1)
-        dx = a[0] - mid_x
-        dy = a[1] - mid_y
-        return (dx / normalizer) ** 2 + (dy / normalizer) ** 2
+    if mode == "online_inside":
+        if k <= 0:
+            residual += k**2
+        elif k >= 1:
+            residual += (k - 1) ** 2
+    elif mode == "online_extension" and 0 <= k <= 1:
+        residual += min(k, 1 - k) ** 2
+    return residual
 
-    if func_name == "is_point_in_triangle" and len(params) == 4:
-        points = _resolve_points(variables, coordinates, params)
-        if points is None:
-            return None
-        # Convention: first 3 params define triangle (A,B,C), last param is test point (P)
-        A, B, C, P = points
 
-        def _cross(O, X, Y):
-            return (X[0] - O[0]) * (Y[1] - O[1]) - (X[1] - O[1]) * (Y[0] - O[0])
+def _parallel_residual(params, variables, coordinates):
+    if len(params) != 4:
+        return None
+    points = _resolve_points(variables, coordinates, params)
+    if points is None:
+        return None
+    a, b, c, d = points
+    cross = (b[0] - a[0]) * (d[1] - c[1]) - (b[1] - a[1]) * (d[0] - c[0])
+    norm_ab = math.hypot(b[0] - a[0], b[1] - a[1])
+    norm_cd = math.hypot(d[0] - c[0], d[1] - c[1])
+    normalizer = max(norm_ab * norm_cd, 0.1)
+    return (cross / normalizer) ** 2
 
-        # Triangle orientation (independent of P)
-        orient = _cross(A, B, C)
-        if abs(orient) < 1e-10:
-            return 0.0
-        # Signed distances from P to each edge, normalized so inside = positive
-        sign = 1.0 if orient > 0 else -1.0
-        d1 = sign * _cross(A, B, P) / math.hypot(B[0] - A[0], B[1] - A[1])
-        d2 = sign * _cross(B, C, P) / math.hypot(C[0] - B[0], C[1] - B[1])
-        d3 = sign * _cross(C, A, P) / math.hypot(A[0] - C[0], A[1] - C[1])
-        if d1 >= 0 and d2 >= 0 and d3 >= 0:
-            return 0.0
-        # Outside: penalize violated edges
-        penalty = 0.0
-        for d in (d1, d2, d3):
-            if d < 0:
-                penalty += d**2
-        return penalty
 
-    if func_name == "is_point_out_triangle" and len(params) == 4:
-        points = _resolve_points(variables, coordinates, params)
-        if points is None:
-            return None
-        # Convention: first 3 params define triangle (A,B,C), last param is test point (P)
-        A, B, C, P = points
+def _midpoint_residual(params, variables, coordinates):
+    if len(params) != 3:
+        return None
+    points = _resolve_points(variables, coordinates, params)
+    if points is None:
+        return None
+    a, b, c = points
+    mid_x = (b[0] + c[0]) / 2
+    mid_y = (b[1] + c[1]) / 2
+    span = math.hypot(c[0] - b[0], c[1] - b[1])
+    normalizer = max(span, 0.1)
+    dx = a[0] - mid_x
+    dy = a[1] - mid_y
+    return (dx / normalizer) ** 2 + (dy / normalizer) ** 2
 
-        def _cross(O, X, Y):
-            return (X[0] - O[0]) * (Y[1] - O[1]) - (X[1] - O[1]) * (Y[0] - O[0])
 
-        orient = _cross(A, B, C)
-        if abs(orient) < 1e-10:
-            return 0.0
-        sign = 1.0 if orient > 0 else -1.0
-        d1 = sign * _cross(A, B, P) / math.hypot(B[0] - A[0], B[1] - A[1])
-        d2 = sign * _cross(B, C, P) / math.hypot(C[0] - B[0], C[1] - B[1])
-        d3 = sign * _cross(C, A, P) / math.hypot(A[0] - C[0], A[1] - C[1])
-        if d1 >= 0 and d2 >= 0 and d3 >= 0:
-            return min(d1, d2, d3) ** 2
+def _is_point_in_triangle_residual(params, variables, coordinates):
+    if len(params) != 4:
+        return None
+    points = _resolve_points(variables, coordinates, params)
+    if points is None:
+        return None
+    a, b, c, p = points
+    _, edge_distances = _triangle_edge_distances((a, b, c), p)
+    if not edge_distances:
         return 0.0
+    d1, d2, d3 = edge_distances
+    if d1 >= 0 and d2 >= 0 and d3 >= 0:
+        return 0.0
+    return sum(d**2 for d in (d1, d2, d3) if d < 0)
 
-    if func_name == "is_acute_triangle" and len(params) == 3:
-        points = _resolve_points(variables, coordinates, params)
-        if points is None:
-            return None
-        A, B, C = points
-        AB = (B[0] - A[0], B[1] - A[1])
-        AC = (C[0] - A[0], C[1] - A[1])
-        BA = (-AB[0], -AB[1])
-        BC = (C[0] - B[0], C[1] - B[1])
-        CA = (-AC[0], -AC[1])
-        CB = (-BC[0], -BC[1])
-        dot_A = AB[0] * AC[0] + AB[1] * AC[1]
-        dot_B = BA[0] * BC[0] + BA[1] * BC[1]
-        dot_C = CA[0] * CB[0] + CA[1] * CB[1]
-        norm_AB = math.hypot(*AB)
-        norm_AC = math.hypot(*AC)
-        norm_BC = math.hypot(*BC)
-        n_A = max(norm_AB * norm_AC, 0.1)
-        n_B = max(norm_AB * norm_BC, 0.1)
-        n_C = max(norm_AC * norm_BC, 0.1)
-        if dot_A > 0 and dot_B > 0 and dot_C > 0:
-            return 0.0
-        penalty = 0.0
-        for dot, n in ((dot_A, n_A), (dot_B, n_B), (dot_C, n_C)):
-            if dot <= 0:
-                penalty += (dot / n) ** 2
-        return penalty
 
-    if func_name == "angle_bisector" and len(params) == 5:
-        points = _resolve_points(variables, coordinates, params)
-        if points is None:
-            return None
-        A, D, C, A_dup, B = points
-        AB = (B[0] - A[0], B[1] - A[1])
-        AD = (D[0] - A[0], D[1] - A[1])
-        AC = (C[0] - A[0], C[1] - A[1])
-        angle_BAD = _calculate_angle_deg(AB, AD)
-        angle_CAD = _calculate_angle_deg(AC, AD)
-        if angle_BAD < 10 or angle_CAD < 10:
-            return 0.1
-        return ((angle_BAD - angle_CAD) / 180) ** 2
+def _is_point_out_triangle_residual(params, variables, coordinates):
+    if len(params) != 4:
+        return None
+    points = _resolve_points(variables, coordinates, params)
+    if points is None:
+        return None
+    a, b, c, p = points
+    _, edge_distances = _triangle_edge_distances((a, b, c), p)
+    if not edge_distances:
+        return 0.0
+    d1, d2, d3 = edge_distances
+    if d1 >= 0 and d2 >= 0 and d3 >= 0:
+        return min(d1, d2, d3) ** 2
+    return 0.0
 
-    if func_name == "arc_midpoint" and len(params) == 3:
-        points = _resolve_points(variables, coordinates, params)
-        if points is None:
-            return None
-        A, B, C = points
-        dist_AB_sq = (A[0] - B[0]) ** 2 + (A[1] - B[1]) ** 2
-        dist_AC_sq = (A[0] - C[0]) ** 2 + (A[1] - C[1]) ** 2
-        normalizer = max(dist_AB_sq, dist_AC_sq, 0.1)
-        return ((dist_AB_sq - dist_AC_sq) / normalizer) ** 2
 
-    return None
+def _is_acute_triangle_residual(params, variables, coordinates):
+    if len(params) != 3:
+        return None
+    points = _resolve_points(variables, coordinates, params)
+    if points is None:
+        return None
+    a, b, c = points
+    ab = (b[0] - a[0], b[1] - a[1])
+    ac = (c[0] - a[0], c[1] - a[1])
+    ba = (-ab[0], -ab[1])
+    bc = (c[0] - b[0], c[1] - b[1])
+    ca = (-ac[0], -ac[1])
+    cb = (-bc[0], -bc[1])
+    dot_a = ab[0] * ac[0] + ab[1] * ac[1]
+    dot_b = ba[0] * bc[0] + ba[1] * bc[1]
+    dot_c = ca[0] * cb[0] + ca[1] * cb[1]
+    norm_ab = math.hypot(*ab)
+    norm_ac = math.hypot(*ac)
+    norm_bc = math.hypot(*bc)
+    n_a = max(norm_ab * norm_ac, 0.1)
+    n_b = max(norm_ab * norm_bc, 0.1)
+    n_c = max(norm_ac * norm_bc, 0.1)
+    if dot_a > 0 and dot_b > 0 and dot_c > 0:
+        return 0.0
+    return sum((dot / n) ** 2 for dot, n in ((dot_a, n_a), (dot_b, n_b), (dot_c, n_c)) if dot <= 0)
+
+
+def _angle_bisector_residual(params, variables, coordinates):
+    if len(params) != 5:
+        return None
+    points = _resolve_points(variables, coordinates, params)
+    if points is None:
+        return None
+    a, d, c, _a_dup, b = points
+    ab = (b[0] - a[0], b[1] - a[1])
+    ad = (d[0] - a[0], d[1] - a[1])
+    ac = (c[0] - a[0], c[1] - a[1])
+    angle_bad = _calculate_angle_deg(ab, ad)
+    angle_cad = _calculate_angle_deg(ac, ad)
+    if angle_bad < 10 or angle_cad < 10:
+        return 0.1
+    return ((angle_bad - angle_cad) / 180) ** 2
+
+
+def _arc_midpoint_residual(params, variables, coordinates):
+    if len(params) != 3:
+        return None
+    points = _resolve_points(variables, coordinates, params)
+    if points is None:
+        return None
+    a, b, c = points
+    dist_ab_sq = _squared_segment_distances_sq(a, b)
+    dist_ac_sq = _squared_segment_distances_sq(a, c)
+    normalizer = max(dist_ab_sq, dist_ac_sq, 0.1)
+    return ((dist_ab_sq - dist_ac_sq) / normalizer) ** 2
+
+
+_CONTINUOUS_RESIDUAL_HANDLERS = {
+    "dist": _dist_residual,
+    "angle": _angle_residual,
+    "equal_line": _equal_line_residual,
+    "line_ratio": _line_ratio_residual,
+    "angle_relation": _angle_relation_residual,
+    "ortho": _ortho_residual,
+    "online": lambda params, variables, coordinates: _online_residual(
+        "online", params, variables, coordinates
+    ),
+    "online_inside": lambda params, variables, coordinates: _online_residual(
+        "online_inside", params, variables, coordinates
+    ),
+    "online_extension": lambda params, variables, coordinates: _online_residual(
+        "online_extension", params, variables, coordinates
+    ),
+    "parallel": _parallel_residual,
+    "midpoint": _midpoint_residual,
+    "is_point_in_triangle": _is_point_in_triangle_residual,
+    "is_point_out_triangle": _is_point_out_triangle_residual,
+    "is_acute_triangle": _is_acute_triangle_residual,
+    "angle_bisector": _angle_bisector_residual,
+    "arc_midpoint": _arc_midpoint_residual,
+}
+
+
+def _constraint_residual(func_name, params, variables, coordinates):
+    handler = _CONTINUOUS_RESIDUAL_HANDLERS.get(func_name)
+    if handler is None:
+        return None
+    return handler(params, variables, coordinates)
 
 
 def _constraint_contribution(execute_code, variables, coordinates, boolean_penalty):
@@ -385,41 +452,35 @@ _CIRCLE_CONSTRAINT_RE = re.compile(
 )
 
 
-def _detect_circle_constraints(condition_code, coordinates, variables):
-    """Find groups of unknown points pinned to the same circle.
+def _parse_dist_circle_constraint(code):
+    match = _CIRCLE_CONSTRAINT_RE.match(code.strip())
+    if not match:
+        return None
+    return match.group(1), match.group(2), float(match.group(3))
 
-    Returns a list of (center_xy, radius, [var_x_key, var_y_key, ...]) tuples.
-    Each entry in the var list is a (x_key, y_key) pair for an unknown point
-    that must lie on that circle.
-    """
-    # Map: (center_name, radius) -> [point_names]
-    circles = {}
-    for code in condition_code:
-        m = _CIRCLE_CONSTRAINT_RE.match(code.strip())
-        if not m:
-            continue
-        center_name, point_name, radius_str = m.group(1), m.group(2), float(m.group(3))
-        # Center must be a known (fully numeric) point
-        if center_name not in coordinates:
-            continue
-        center_xy = _resolve_numeric_coord(
-            coordinates[center_name], variables, coordinates
-        )
-        if center_xy is None:
-            continue
-        # Point must have unknown variables
-        if point_name not in coordinates:
-            continue
-        point_ref = coordinates[point_name]
-        if len(point_ref) != 2:
-            continue
-        px, py = point_ref
-        if not isinstance(px, str) and not isinstance(py, str):
-            continue
-        key = (center_name, radius_str)
-        circles.setdefault(key, []).append((point_name, radius_str))
 
-    # Group by circle: return structured info
+def _point_has_unknown_variables(point_ref):
+    if len(point_ref) != 2:
+        return False
+    px, py = point_ref
+    return isinstance(px, str) or isinstance(py, str)
+
+
+def _circle_constraint_entry(code, coordinates, variables):
+    parsed = _parse_dist_circle_constraint(code)
+    if parsed is None:
+        return None
+    center_name, point_name, radius = parsed
+    if center_name not in coordinates or point_name not in coordinates:
+        return None
+    if _resolve_numeric_coord(coordinates[center_name], variables, coordinates) is None:
+        return None
+    if not _point_has_unknown_variables(coordinates[point_name]):
+        return None
+    return center_name, radius, point_name
+
+
+def _build_circle_constraint_results(circles, coordinates, variables):
     result = []
     for (center_name, radius), points in circles.items():
         center_xy = _resolve_numeric_coord(
@@ -429,6 +490,23 @@ def _detect_circle_constraints(condition_code, coordinates, variables):
             continue
         result.append((center_xy, radius, points))
     return result
+
+
+def _detect_circle_constraints(condition_code, coordinates, variables):
+    """Find groups of unknown points pinned to the same circle.
+
+    Returns a list of (center_xy, radius, [var_x_key, var_y_key, ...]) tuples.
+    Each entry in the var list is a (x_key, y_key) pair for an unknown point
+    that must lie on that circle.
+    """
+    circles = {}
+    for code in condition_code:
+        entry = _circle_constraint_entry(code, coordinates, variables)
+        if entry is None:
+            continue
+        center_name, radius, point_name = entry
+        circles.setdefault((center_name, radius), []).append((point_name, radius))
+    return _build_circle_constraint_results(circles, coordinates, variables)
 
 
 def extract_and_modify_nelder_mead(coordinates, condition_code, variables):
