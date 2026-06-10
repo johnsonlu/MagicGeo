@@ -60,10 +60,16 @@ def analyze_geometry_context(text):
     system_prompt = (
         "你是一个几何专家。请分析给出的数学题，并以 JSON 格式输出以下信息：\n"
         "1. type: 图形类型(circle/triangle/quad/mixed)\n"
-        "2. radius: 如果涉及圆，提取半径数值；如果不确定但有半径概念，设为 1.0；否则为 null\n"
-        "3. suggestions: 针对该图形的基本顶点坐标系建议（例如：'设圆心O为(0,0)', '设A为(0,0)'）。"
-        "只建议顶点/圆心等基础点的坐标，不要写中点或交点的推导坐标（如 a/2、b/2）。\n"
-        "4. is_circle: 布尔值，是否包含圆"
+        "2. subtype: 四边形子类型，仅当 type 为 quad 时填写 "
+        "(square/rectangle/rhombus/parallelogram/generic_quad)，否则为 null\n"
+        "3. radius: 如果涉及圆，提取半径数值；如果不确定但有半径概念，设为 1.0；否则为 null\n"
+        "4. suggestions: 针对该图形的基本顶点坐标系建议（例如：'设圆心O为(0,0)', '设A为(0,0)'）。"
+        "只建议顶点/圆心等基础点的坐标，不要写中点或交点的推导坐标（如 a/2、b/2）。"
+        "若为四边形，给出轴对齐坐标模板（如正方形 A=(0,0),B=(0,s),C=(s,s),D=(s,0)）。\n"
+        "5. required_constraints: 该图形必须输出的约束清单（字符串数组）。"
+        "四边形示例：正方形需 parallel(A,B,D,C)、parallel(A,D,B,C)、ortho(A,B,B,C)、equal_line(A,B,B,C)；"
+        "矩形需两条 parallel + ortho；菱形需两条 parallel + equal_line；平行四边形需两条 parallel。\n"
+        "6. is_circle: 布尔值，是否包含圆"
     )
 
     analysis = call_llm(system_prompt, f"题目内容：{text}", response_format="json")
@@ -76,7 +82,17 @@ def analyze_geometry_context(text):
     if analysis.get('is_circle') and radius is None:
         radius = 1.0
 
-    extra_info = f"类型：{analysis.get('type')}。建议：{analysis.get('suggestions')}"
+    parts = [f"类型：{analysis.get('type')}"]
+    subtype = analysis.get('subtype')
+    if subtype:
+        parts.append(f"子类型：{subtype}")
+    parts.append(f"建议：{analysis.get('suggestions')}")
+    required = analysis.get('required_constraints')
+    if required:
+        if isinstance(required, list):
+            required = "、".join(str(c) for c in required)
+        parts.append(f"必需条件：{required}")
+    extra_info = "。".join(parts)
     return extra_info, radius
 
 def calcmidpoint(A, B):
@@ -156,12 +172,23 @@ def process_geometry_task(item, generic_knowledge, output_dir=None):
         "2. conditions: 字典，键为条件编号，值为 [函数名, 参数1, 参数2, ...] 数组\n"
         "3. 若题目明确点在某圆（⊙O）上，除角度/弧中点等条件外，还必须为每个圆上点添加 "
         "'dist': ['dist', 'O', '点名称', 'r']（半径用 r，与坐标中的 r 一致）\n"
-        "示例：{\"coordinates\": {\"O\": [0, 0], \"A\": [\"r\", 0], \"B\": [\"a\", \"b\"]}, "
+        "4. 若题目出现平行四边形/矩形/正方形/菱形，必须输出该图形的完整约束清单"
+        "（见知识库「四边形子类型约束清单」），即使题目主要讨论内部点 E、F 等也不能省略。\n"
+        "5. 正方形 few-shot 示例：\n"
+        "{\"coordinates\": {\"A\": [0, 0], \"B\": [0, \"s\"], \"C\": [\"s\", \"s\"], "
+        "\"D\": [\"s\", 0], \"E\": [\"e\", \"s\"]}, "
+        "\"conditions\": {\"c1\": [\"parallel\", \"A\", \"B\", \"D\", \"C\"], "
+        "\"c2\": [\"parallel\", \"A\", \"D\", \"B\", \"C\"], "
+        "\"c3\": [\"ortho\", \"A\", \"B\", \"B\", \"C\"], "
+        "\"c4\": [\"equal_line\", \"A\", \"B\", \"B\", \"C\"], "
+        "\"c5\": [\"online_inside\", \"E\", \"B\", \"C\"]}}\n"
+        "圆示例：{\"coordinates\": {\"O\": [0, 0], \"A\": [\"r\", 0], \"B\": [\"a\", \"b\"]}, "
         "\"conditions\": {\"c1\": [\"dist\", \"O\", \"A\", \"r\"], \"c2\": [\"angle\", \"B\", \"A\", \"C\", 35]}}\n"
     )
 
     full_prompt = f"{generic_knowledge}\n\n当前题目辅助背景：{extra_info}"
     user_msg = f"题目:{text}\n任务:{instruct}"
+    
     print(full_prompt)
     print(user_msg)
     result = call_llm(full_prompt, user_msg, response_format="json")
