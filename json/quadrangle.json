@@ -398,5 +398,10 @@
         "id": 79,
         "type": "四边形",
         "subject": "平行四边形ABCD中，点F在BC上，点E在AD上，AF//CE，AD=BC，连接AD，CE。"
+    },
+    {
+        "id": 80,
+        "type": "四边形",
+        "subject":"四边形 ABCD 的两条对角线 AC、BD 交于点 E，∠BAC=50°,∠ABD=60°, ∠CBD=20°，∠CAD=30°，∠ADB=40°"
     }
 ]
