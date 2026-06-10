@@ -36,7 +36,7 @@ def resolve_coord_string(value, variables):
     return None, False
 
 
-def check_is_calculate(variables,point_list,coordinates):
+def check_is_calculate(variables, point_list, coordinates):
 
     is_calculate = True
     for i in range(len(point_list)):
@@ -57,17 +57,22 @@ def check_is_calculate(variables,point_list,coordinates):
         else:
             point = [point_list[i][0], point_list[i][1]]
             if isinstance(point_list[i][0], str):
-                resolved, is_calculate = resolve_coord_string(point_list[i][0], variables)
+                resolved, is_calculate = resolve_coord_string(
+                    point_list[i][0], variables
+                )
                 if not is_calculate:
                     return is_calculate, point_list
                 point[0] = resolved
             if isinstance(point_list[i][1], str):
-                resolved, is_calculate = resolve_coord_string(point_list[i][1], variables)
+                resolved, is_calculate = resolve_coord_string(
+                    point_list[i][1], variables
+                )
                 if not is_calculate:
                     return is_calculate, point_list
                 point[1] = resolved
             point_list[i] = point
-    return is_calculate,point_list
+    return is_calculate, point_list
+
 
 POINT_CLOSE_TOLERANCE = 0.1
 
@@ -95,29 +100,31 @@ def check_coordinates_distinct(coordinates, variables):
     return check_point_different(point_list)
 
 
-def dist(variables,A, B, r,coordinates):
-    is_calculate,point_list= check_is_calculate(variables,[A,B],coordinates)
+def dist(variables, A, B, r, coordinates):
+    is_calculate, point_list = check_is_calculate(variables, [A, B], coordinates)
     if is_calculate:
-        A=point_list[0]
-        B=point_list[1]
+        A = point_list[0]
+        B = point_list[1]
         tolerance = 0.01  # 定义误差范围
         # 计算 AB 的平方距离
         distance_squared = (A[0] - B[0]) ** 2 + (A[1] - B[1]) ** 2
         # 计算 r 的平方
-        r_squared = r ** 2
+        r_squared = r**2
         # 使用 math.isclose 进行误差范围内的比较
-        return math.isclose(distance_squared, r_squared, abs_tol=tolerance), is_calculate
+        return math.isclose(
+            distance_squared, r_squared, abs_tol=tolerance
+        ), is_calculate
     return False, is_calculate
 
 
-def angle(variables,B, A, C, expected_angle,coordinates):
-    is_calculate, point_list = check_is_calculate(variables,[B, A, C],coordinates)
+def angle(variables, B, A, C, expected_angle, coordinates):
+    is_calculate, point_list = check_is_calculate(variables, [B, A, C], coordinates)
     min_distance = 0.4
     if is_calculate:
         # print("angle")
-        B=point_list[0]
-        A=point_list[1]
-        C=point_list[2]
+        B = point_list[0]
+        A = point_list[1]
+        C = point_list[2]
 
         tolerance = 2
         # 计算向量 AB 和 AC 的坐标
@@ -150,6 +157,7 @@ def angle(variables,B, A, C, expected_angle,coordinates):
         else:
             return False, is_calculate
     return False, is_calculate
+
 
 def point_to_line_distance(point, line_start, line_end):
     """
@@ -193,10 +201,8 @@ def angle_bisector(variables, A, D, C, A_dup, B, coordinates):
     # 确保 A 和 A_dup 是同一点
     # assert A == A_dup, "angle_bisector中，A 和 A_dup 必须是同一点"
 
-
-
     # 检查所有点是否可以进行计算
-    is_calculate, point_list = check_is_calculate(variables, [A, B, C, D],coordinates)
+    is_calculate, point_list = check_is_calculate(variables, [A, B, C, D], coordinates)
     if is_calculate:
         A, B, C, D = point_list
         if not check_point_different([A, B, C, D]):
@@ -229,8 +235,7 @@ def angle_bisector(variables, A, D, C, A_dup, B, coordinates):
     return False, is_calculate
 
 
-
-def equal_line(variables, A, B, C, D,coordinates):
+def equal_line(variables, A, B, C, D, coordinates):
     """
     检查线段 AB 和 CD 是否等长。
 
@@ -243,16 +248,15 @@ def equal_line(variables, A, B, C, D,coordinates):
                否则返回 False 和计算状态。
     """
     # 检查所有点是否可以进行计算
-    is_calculate, point_list = check_is_calculate(variables, [A, B, C, D],coordinates)
+    is_calculate, point_list = check_is_calculate(variables, [A, B, C, D], coordinates)
 
     if is_calculate:
         # 更新点的坐标
-        
+
         A = point_list[0]
         B = point_list[1]
         C = point_list[2]
         D = point_list[3]
-        
 
         if not check_point_different([A, B]):
             return False, is_calculate
@@ -261,20 +265,20 @@ def equal_line(variables, A, B, C, D,coordinates):
 
         tolerance = 0.01  # 定义误差范围
 
-
         # 计算 AB 和 CD 的平方距离
         distance_AB_squared = (A[0] - B[0]) ** 2 + (A[1] - B[1]) ** 2
         distance_CD_squared = (C[0] - D[0]) ** 2 + (C[1] - D[1]) ** 2
         # tolerance = 0.01 * distance_AB_squared # 根据AB的长度计算误差范围
 
         # 使用 math.isclose 比较 AB 和 CD 的平方距离是否相等
-        return math.isclose(distance_AB_squared, distance_CD_squared, abs_tol=tolerance), is_calculate
+        return math.isclose(
+            distance_AB_squared, distance_CD_squared, abs_tol=tolerance
+        ), is_calculate
 
     return False, is_calculate
 
 
-
-def ortho(variables, A, B, E, F,coordinates):
+def ortho(variables, A, B, E, F, coordinates):
     """
     检查线段 AB 是否垂直于 EF。
 
@@ -287,7 +291,7 @@ def ortho(variables, A, B, E, F,coordinates):
                否则返回 False 和计算状态。
     """
     # 检查所有点是否可以进行计算
-    is_calculate, point_list = check_is_calculate(variables, [A, B, E, F],coordinates)
+    is_calculate, point_list = check_is_calculate(variables, [A, B, E, F], coordinates)
 
     if is_calculate:
         # 更新点的坐标
@@ -301,9 +305,9 @@ def ortho(variables, A, B, E, F,coordinates):
         close_tolerance = 0.01
 
         # 检查 AB 和 CD 的端点是否相近
-        if (abs(A[0] - B[0]) < close_tolerance and abs(A[1] - B[1]) < close_tolerance):
+        if abs(A[0] - B[0]) < close_tolerance and abs(A[1] - B[1]) < close_tolerance:
             return False, is_calculate
-        if (abs(E[0] - F[0]) < close_tolerance and abs(E[1] - F[1]) < close_tolerance):
+        if abs(E[0] - F[0]) < close_tolerance and abs(E[1] - F[1]) < close_tolerance:
             return False, is_calculate
 
         # 计算向量 AB 和 EF 的坐标
@@ -312,7 +316,6 @@ def ortho(variables, A, B, E, F,coordinates):
 
         # 计算向量 AB 和 EF 的点积
         dot_product = AB[0] * EF[0] + AB[1] * EF[1]
-        
 
         # 如果点积接近于 0，则说明 AB 垂直于 EF
         return math.isclose(dot_product, 0, abs_tol=tolerance), is_calculate
@@ -320,7 +323,7 @@ def ortho(variables, A, B, E, F,coordinates):
     return False, is_calculate
 
 
-def online(variables, B, E, F,coordinates):
+def online(variables, B, E, F, coordinates):
     """
     检查点 B 是否在线段 EF 上。
 
@@ -333,7 +336,7 @@ def online(variables, B, E, F,coordinates):
                否则返回 False 和计算状态。
     """
     # 检查所有点是否可以进行计算
-    is_calculate, point_list = check_is_calculate(variables, [B, E, F],coordinates)
+    is_calculate, point_list = check_is_calculate(variables, [B, E, F], coordinates)
 
     if is_calculate:
         # 更新点的坐标
@@ -341,16 +344,17 @@ def online(variables, B, E, F,coordinates):
         E = point_list[1]
         F = point_list[2]
 
-        determinant = B[0] * (E[1] - F[1]) + E[0] * (F[1] - B[1])+ F[0] * (B[1] - E[1])
-        EB_length_squared = (B[0]-E[0]) ** 2 + (B[1]-E[1]) ** 2
+        determinant = B[0] * (E[1] - F[1]) + E[0] * (F[1] - B[1]) + F[0] * (B[1] - E[1])
+        EB_length_squared = (B[0] - E[0]) ** 2 + (B[1] - E[1]) ** 2
 
         # 如果行列式的绝对值小于等于 0.0001，则点 B 在线段 EF 上
         tolerance = 0.012  # 定义误差范围
-        return abs(determinant)/(EB_length_squared+1e-6) <= tolerance, is_calculate
+        return abs(determinant) / (EB_length_squared + 1e-6) <= tolerance, is_calculate
 
     return False, is_calculate
 
-def online_extension(variables, B, E, F,coordinates):
+
+def online_extension(variables, B, E, F, coordinates):
     """
     检查点 B 是否在线段 EF的延长线 上。
 
@@ -363,7 +367,7 @@ def online_extension(variables, B, E, F,coordinates):
                否则返回 False 和计算状态。
     """
     # 检查所有点是否可以进行计算
-    is_calculate, point_list = check_is_calculate(variables, [B, E, F],coordinates)
+    is_calculate, point_list = check_is_calculate(variables, [B, E, F], coordinates)
     # print(point_list)
 
     if is_calculate:
@@ -371,16 +375,16 @@ def online_extension(variables, B, E, F,coordinates):
         B = point_list[0]
         E = point_list[1]
         F = point_list[2]
-        if not check_point_different([B,E,F]):
+        if not check_point_different([B, E, F]):
             return False, is_calculate
-        is_online, is_ = online(variables,B,E,F,coordinates)
-        
+        is_online, is_ = online(variables, B, E, F, coordinates)
+
         if is_online:
             # 提取坐标
             x_b, y_b = B
             x_e, y_e = E
             x_f, y_f = F
-            
+
             # 计算 k
             if x_f - x_e != 0:
                 k = (x_b - x_e) / (x_f - x_e)
@@ -389,7 +393,7 @@ def online_extension(variables, B, E, F,coordinates):
             else:
                 # B 和 E 是同一个点，这种情况不成立
                 return False, is_calculate
-            
+
             # 判断 k 的值
             # print(k)
             if k > 1 or k < 0:
@@ -397,7 +401,7 @@ def online_extension(variables, B, E, F,coordinates):
     return False, is_calculate
 
 
-def online_inside(variables, B, E, F,coordinates):
+def online_inside(variables, B, E, F, coordinates):
     """
     检查点 B 是否在线段 EF的延长线 上。
 
@@ -410,7 +414,7 @@ def online_inside(variables, B, E, F,coordinates):
                否则返回 False 和计算状态。
     """
     # 检查所有点是否可以进行计算
-    is_calculate, point_list = check_is_calculate(variables, [B, E, F],coordinates)
+    is_calculate, point_list = check_is_calculate(variables, [B, E, F], coordinates)
     # print(point_list)
 
     if is_calculate:
@@ -418,16 +422,16 @@ def online_inside(variables, B, E, F,coordinates):
         B = point_list[0]
         E = point_list[1]
         F = point_list[2]
-        if not check_point_different([B,E,F]):
+        if not check_point_different([B, E, F]):
             return False, is_calculate
-        is_online, is_ = online(variables,B,E,F,coordinates)
-        
+        is_online, is_ = online(variables, B, E, F, coordinates)
+
         if is_online:
             # 提取坐标
             x_b, y_b = B
             x_e, y_e = E
             x_f, y_f = F
-            
+
             # 计算 k
             if x_f - x_e != 0:
                 k = (x_b - x_e) / (x_f - x_e)
@@ -436,14 +440,15 @@ def online_inside(variables, B, E, F,coordinates):
             else:
                 # B 和 E 是同一个点，这种情况不成立
                 return False, is_calculate
-            
+
             # 判断 k 的值
             # print(k)
             if k > 0 and k < 1:
                 return True, is_calculate
     return False, is_calculate
 
-def midpoint(variables, A, B, C,coordinates):
+
+def midpoint(variables, A, B, C, coordinates):
     """
     检查点 A 是否是线段 BC 的中点。
 
@@ -456,7 +461,7 @@ def midpoint(variables, A, B, C,coordinates):
                否则返回 False 和计算状态。
     """
     # 检查所有点是否可以进行计算
-    is_calculate, point_list = check_is_calculate(variables, [A, B, C],coordinates)
+    is_calculate, point_list = check_is_calculate(variables, [A, B, C], coordinates)
 
     if is_calculate:
         # 更新点的坐标
@@ -469,9 +474,9 @@ def midpoint(variables, A, B, C,coordinates):
         close_tolerance = 0.05
 
         # 检查A点与BC的端点是否相近
-        if (abs(A[0] - B[0]) < close_tolerance and abs(A[1] - B[1]) < close_tolerance):
+        if abs(A[0] - B[0]) < close_tolerance and abs(A[1] - B[1]) < close_tolerance:
             return False, is_calculate
-        if (abs(A[0] - C[0]) < close_tolerance and abs(A[1] - C[1]) < close_tolerance):
+        if abs(A[0] - C[0]) < close_tolerance and abs(A[1] - C[1]) < close_tolerance:
             return False, is_calculate
 
         # 计算 B 和 C 的中点
@@ -486,7 +491,7 @@ def midpoint(variables, A, B, C,coordinates):
     return False, is_calculate
 
 
-def parallel(variables, A, B, C, D,coordinates):
+def parallel(variables, A, B, C, D, coordinates):
     """
     检查线段 AB 是否平行于线段 CD。
 
@@ -500,7 +505,7 @@ def parallel(variables, A, B, C, D,coordinates):
     """
     # 检查所有点是否可以进行计算
 
-    is_calculate, point_list = check_is_calculate(variables, [A, B, C, D],coordinates)
+    is_calculate, point_list = check_is_calculate(variables, [A, B, C, D], coordinates)
 
     if is_calculate:
         A = point_list[0]
@@ -509,15 +514,16 @@ def parallel(variables, A, B, C, D,coordinates):
         D = point_list[3]
         if not check_point_different([A, B, C, D]):
             return False, is_calculate
-        
-        is_online, ignore = online(variables, A,B,C, coordinates)
+
+        is_online, ignore = online(variables, A, B, C, coordinates)
         if is_online:
             # print('online')
             return False, is_calculate
+
         def slope(p1, p2):
             """计算两点之间的斜率"""
             if p2[0] == p1[0]:
-                return float('inf')  # 斜率为无穷大（垂直线段）
+                return float("inf")  # 斜率为无穷大（垂直线段）
             return (p2[1] - p1[1]) / (p2[0] - p1[0])
 
         # 计算线段 AB 和 CD 的斜率
@@ -533,7 +539,7 @@ def parallel(variables, A, B, C, D,coordinates):
     return False, is_calculate
 
 
-def angle_relation(variables, A, B, C, D, E, F, ratio,coordinates):
+def angle_relation(variables, A, B, C, D, E, F, ratio, coordinates):
     """
     判断 ∠ABC 是否等于 ratio 倍的 ∠DEF。
 
@@ -546,7 +552,9 @@ def angle_relation(variables, A, B, C, D, E, F, ratio,coordinates):
         tuple: 一个布尔值和计算状态。如果满足条件，返回 True 和计算状态；否则返回 False 和计算状态。
     """
     # 检查所有点是否可以进行计算
-    is_calculate, point_list = check_is_calculate(variables, [A, B, C, D, E, F],coordinates)
+    is_calculate, point_list = check_is_calculate(
+        variables, [A, B, C, D, E, F], coordinates
+    )
     if is_calculate:
         A = point_list[0]
         B = point_list[1]
@@ -554,9 +562,9 @@ def angle_relation(variables, A, B, C, D, E, F, ratio,coordinates):
         D = point_list[3]
         E = point_list[4]
         F = point_list[5]
-        if not check_point_different([A,B,C]):
+        if not check_point_different([A, B, C]):
             return False, is_calculate
-        if not check_point_different([D,E,F]):
+        if not check_point_different([D, E, F]):
             return False, is_calculate
 
         tolerance = 0.5  # 容差范围
@@ -582,11 +590,14 @@ def angle_relation(variables, A, B, C, D, E, F, ratio,coordinates):
         angle_DEF = calculate_angle(ED, EF)
 
         # 判断是否满足 ∠ABC = ratio * ∠DEF
-        return math.isclose(angle_ABC, ratio * angle_DEF, abs_tol=tolerance), is_calculate
+        return math.isclose(
+            angle_ABC, ratio * angle_DEF, abs_tol=tolerance
+        ), is_calculate
 
     return False, is_calculate
 
-def arc_midpoint(variables, A, B, C,coordinates):
+
+def arc_midpoint(variables, A, B, C, coordinates):
     """
     检查点 A 是否是弧 BC 的中点。
 
@@ -599,7 +610,7 @@ def arc_midpoint(variables, A, B, C,coordinates):
                否则返回 False 和计算状态。
     """
     # 检查所有点是否可以进行计算
-    is_calculate, point_list = check_is_calculate(variables, [A, B, C],coordinates)
+    is_calculate, point_list = check_is_calculate(variables, [A, B, C], coordinates)
 
     if is_calculate:
         A = point_list[0]
@@ -611,9 +622,9 @@ def arc_midpoint(variables, A, B, C,coordinates):
         close_tolerance = 0.05
 
         # 检查A点与BC的端点是否相近
-        if (abs(A[0] - B[0]) < close_tolerance and abs(A[1] - B[1]) < close_tolerance):
+        if abs(A[0] - B[0]) < close_tolerance and abs(A[1] - B[1]) < close_tolerance:
             return False, is_calculate
-        if (abs(A[0] - C[0]) < close_tolerance and abs(A[1] - C[1]) < close_tolerance):
+        if abs(A[0] - C[0]) < close_tolerance and abs(A[1] - C[1]) < close_tolerance:
             return False, is_calculate
 
         # 计算 AB 和 AC 的平方距离
@@ -621,7 +632,9 @@ def arc_midpoint(variables, A, B, C,coordinates):
         distance_AC_squared = (A[0] - C[0]) ** 2 + (A[1] - C[1]) ** 2
 
         # 判断 A 是否等于 BC 的中点
-        return math.isclose(distance_AB_squared, distance_AC_squared, abs_tol=tolerance), is_calculate
+        return math.isclose(
+            distance_AB_squared, distance_AC_squared, abs_tol=tolerance
+        ), is_calculate
 
     return False, is_calculate
 
@@ -651,15 +664,15 @@ def calc_midpoint(variables, A, B, coordinates):
     return None, is_calculate
 
 
-def calc_var_from_dist(a,b,c,dist_val):
+def calc_var_from_dist(a, b, c, dist_val):
     # print(f'a: {a}, b: {b}, c: {c}, dist_val:{dist_val}')
-    one_axis_diff_square = dist_val**2 - (a-b)**2
+    one_axis_diff_square = dist_val**2 - (a - b) ** 2
     if one_axis_diff_square < 0:
         return None
     # print(one_axis_diff_square)
     one_axis_diff = math.sqrt(one_axis_diff_square)
     # print(one_axis_diff)
-    result = [one_axis_diff-c, c-one_axis_diff]
+    result = [one_axis_diff - c, c - one_axis_diff]
     # print(result)
     return result
 
@@ -685,6 +698,7 @@ def is_point_in_triangle(variables, A, B, C, P, coordinates):
 
     if is_calculate:
         A, B, C, P = point_list
+
         # 定义向量叉积计算函数
         def cross_product_sign(O, X, Y):
             # 计算向量叉积并返回其符号
@@ -696,7 +710,9 @@ def is_point_in_triangle(variables, A, B, C, P, coordinates):
         cross3 = cross_product_sign(C, A, P)
 
         # 检查所有叉积的符号是否一致（包括零）
-        is_inside = (cross1 > 0 and cross2 > 0 and cross3 > 0) or (cross1 < 0 and cross2 < 0 and cross3 < 0)
+        is_inside = (cross1 > 0 and cross2 > 0 and cross3 > 0) or (
+            cross1 < 0 and cross2 < 0 and cross3 < 0
+        )
 
         return is_inside, is_calculate
 
@@ -729,10 +745,12 @@ def line_ratio(variables, A, B, F, G, k, coordinates):
         distance_FG_squared = (F[0] - G[0]) ** 2 + (F[1] - G[1]) ** 2
 
         # 计算 FG 是否是 AB 的 k 倍，考虑平方距离的比例关系
-        expected_FG_squared = distance_AB_squared * (k ** 2)
+        expected_FG_squared = distance_AB_squared * (k**2)
 
         # 使用 math.isclose 比较距离的平方是否符合倍数关系
-        return math.isclose(distance_FG_squared, expected_FG_squared, abs_tol=tolerance), is_calculate
+        return math.isclose(
+            distance_FG_squared, expected_FG_squared, abs_tol=tolerance
+        ), is_calculate
 
     return False, is_calculate
 
@@ -758,6 +776,7 @@ def is_point_out_triangle(variables, A, B, C, P, coordinates):
 
     if is_calculate:
         A, B, C, P = point_list
+
         # 定义向量叉积计算函数
         def cross_product_sign(O, X, Y):
             # 计算向量叉积并返回其符号
@@ -769,13 +788,16 @@ def is_point_out_triangle(variables, A, B, C, P, coordinates):
         cross3 = cross_product_sign(C, A, P)
 
         # 检查所有叉积的符号是否一致（包括零）
-        is_inside = (cross1 > 0 and cross2 > 0 and cross3 > 0) or (cross1 < 0 and cross2 < 0 and cross3 < 0)
+        is_inside = (cross1 > 0 and cross2 > 0 and cross3 > 0) or (
+            cross1 < 0 and cross2 < 0 and cross3 < 0
+        )
 
-        return  not is_inside, is_calculate
+        return not is_inside, is_calculate
 
     return False, is_calculate
 
-def is_acute_triangle(variables,A,B,C,coordinates):
+
+def is_acute_triangle(variables, A, B, C, coordinates):
     """
     判断三角形 ABC 是否为锐角三角形的函数。
 
@@ -790,11 +812,13 @@ def is_acute_triangle(variables,A,B,C,coordinates):
     # 检查所有点是否可以进行计算
     is_calculate, point_list = check_is_calculate(variables, [A, B, C], coordinates)
 
-    if is_calculate: 
+    if is_calculate:
         A, B, C = point_list
+
         # 计算三角形的三条边长
         def distance_square(A, B):
-            return (A[0] - B[0])**2 + (A[1] - B[1])**2
+            return (A[0] - B[0]) ** 2 + (A[1] - B[1]) ** 2
+
         a = distance_square(A, B)
         b = distance_square(B, C)
         c = distance_square(C, A)

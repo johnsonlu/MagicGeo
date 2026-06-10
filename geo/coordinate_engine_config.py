@@ -16,24 +16,28 @@ def effective_nelder_mead_restarts(n_vars):
         return NELDER_MEAD_RESTARTS
     scaled = max(NELDER_MEAD_RESTARTS, n_vars * NELDER_MEAD_RESTARTS_PER_VAR)
     return min(scaled, NELDER_MEAD_RESTARTS_CAP)
+
+
 BOOLEAN_PENALTY = float(os.getenv("BOOLEAN_PENALTY", "1000"))
 EARLY_EXIT_PENALTY = float(os.getenv("EARLY_EXIT_PENALTY", "1e-6"))
 
-CONTINUOUS_CONSTRAINTS = frozenset({
-    "dist",
-    "angle",
-    "equal_line",
-    "angle_relation",
-    "line_ratio",
-    "ortho",
-    "online",
-    "online_inside",
-    "online_extension",
-    "parallel",
-    "is_point_in_triangle",
-    "is_point_out_triangle",
-    "is_acute_triangle",
-    "angle_bisector",
-    "arc_midpoint",
-    "midpoint",
-})
+CONTINUOUS_CONSTRAINTS = frozenset(
+    {
+        "dist",
+        "angle",
+        "equal_line",
+        "angle_relation",
+        "line_ratio",
+        "ortho",
+        "online",
+        "online_inside",
+        "online_extension",
+        "parallel",
+        "is_point_in_triangle",
+        "is_point_out_triangle",
+        "is_acute_triangle",
+        "angle_bisector",
+        "arc_midpoint",
+        "midpoint",
+    }
+)

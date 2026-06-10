@@ -1,18 +1,21 @@
 import re
 import tkinter as tk
 from tkinter import ttk
-from pdf2image import convert_from_path
-from PIL import Image, ImageTk
+
 import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pgf import FigureCanvasPgf
-matplotlib.backend_bases.register_backend('pdf', FigureCanvasPgf)
+from pdf2image import convert_from_path
+from PIL import Image, ImageTk
+
+matplotlib.backend_bases.register_backend("pdf", FigureCanvasPgf)
 from pathlib import Path
+
 
 def get_latex_code(user_input):
     latex_code = user_input
     start_index = latex_code.find("\\documentclass")
-    end_index = latex_code.find("\\end{document}") + len('\\end{document}')
+    end_index = latex_code.find("\\end{document}") + len("\\end{document}")
     latex_code = latex_code[start_index:end_index]
     return latex_code
 
@@ -35,7 +38,10 @@ def for_render_code(latex_code):
     else:
         draw_start = re.search(r"\\begin\{(?:tikzpicture|pgfpicture)\}", latex_code)
         if draw_start:
-            preamble, body = latex_code[: draw_start.start()], latex_code[draw_start.start() :]
+            preamble, body = (
+                latex_code[: draw_start.start()],
+                latex_code[draw_start.start() :],
+            )
         else:
             preamble, body = latex_code, ""
 
@@ -52,18 +58,17 @@ def for_render_code(latex_code):
 
 
 def write_latex_debug(latex_code, output_path):
-    debug_path = Path(output_path).with_suffix('.txt')
-    debug_path.write_text(latex_code, encoding='utf-8')
+    debug_path = Path(output_path).with_suffix(".txt")
+    debug_path.write_text(latex_code, encoding="utf-8")
 
 
 def render_latex_to_pdf(latex_code, output_file):
     write_latex_debug(latex_code, output_file)
-    plt.rc('text', usetex=False)
-    plt.rc('pgf', rcfonts=False, preamble=latex_code)
-
+    plt.rc("text", usetex=False)
+    plt.rc("pgf", rcfonts=False, preamble=latex_code)
 
     fig, ax = plt.subplots(figsize=(4, 4))  # Adjust the size as needed
-    ax.axis('off')  # Hide axes
+    ax.axis("off")  # Hide axes
     fig.savefig(output_file)
     plt.close(fig)
     print(f"已存入文件{output_file}")
@@ -94,8 +99,3 @@ def show_pdf(file_path):
         # 更新画布以显示图像
         canvas.update()
     root.mainloop()
-
-
-
-
-

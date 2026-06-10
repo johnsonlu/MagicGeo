@@ -6,11 +6,6 @@ import numpy as np
 from scipy.optimize import minimize
 
 from geo.Auxiliary_function import check_condition_break, eval_geometry_condition
-from geo.Geometric_function import (
-    POINT_CLOSE_TOLERANCE,
-    check_is_calculate,
-    point_to_line_distance,
-)
 from geo.coordinate_engine_config import (
     BOOLEAN_PENALTY,
     CONTINUOUS_CONSTRAINTS,
@@ -20,6 +15,11 @@ from geo.coordinate_engine_config import (
     EARLY_EXIT_PENALTY,
     NELDER_MEAD_MAXITER,
     effective_nelder_mead_restarts,
+)
+from geo.Geometric_function import (
+    POINT_CLOSE_TOLERANCE,
+    check_is_calculate,
+    point_to_line_distance,
 )
 
 _EXECUTE_CODE_RE = re.compile(r"^(\w+)\((?:variables,)?(.+),coordinates\)$")
@@ -105,7 +105,7 @@ def _constraint_residual(func_name, params, variables, coordinates):
         k = params[4]
         dist_ab_sq = (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2
         dist_fg_sq = (f[0] - g[0]) ** 2 + (f[1] - g[1]) ** 2
-        expected = dist_ab_sq * (k ** 2)
+        expected = dist_ab_sq * (k**2)
         normalizer = max(expected, 0.1)
         return ((dist_fg_sq - expected) / normalizer) ** 2
 
@@ -136,7 +136,10 @@ def _constraint_residual(func_name, params, variables, coordinates):
         normalizer = max(norm_ab * norm_ef, 0.1)
         return (dot_product / normalizer) ** 2
 
-    if func_name in {"online", "online_inside", "online_extension"} and len(params) == 3:
+    if (
+        func_name in {"online", "online_inside", "online_extension"}
+        and len(params) == 3
+    ):
         points = _resolve_points(variables, coordinates, params)
         if points is None:
             return None
@@ -156,7 +159,7 @@ def _constraint_residual(func_name, params, variables, coordinates):
 
         if func_name == "online_inside":
             if k <= 0:
-                residual += k ** 2
+                residual += k**2
             elif k >= 1:
                 residual += (k - 1) ** 2
         elif func_name == "online_extension":
@@ -195,8 +198,10 @@ def _constraint_residual(func_name, params, variables, coordinates):
             return None
         # Convention: first 3 params define triangle (A,B,C), last param is test point (P)
         A, B, C, P = points
+
         def _cross(O, X, Y):
             return (X[0] - O[0]) * (Y[1] - O[1]) - (X[1] - O[1]) * (Y[0] - O[0])
+
         # Triangle orientation (independent of P)
         orient = _cross(A, B, C)
         if abs(orient) < 1e-10:
@@ -212,7 +217,7 @@ def _constraint_residual(func_name, params, variables, coordinates):
         penalty = 0.0
         for d in (d1, d2, d3):
             if d < 0:
-                penalty += d ** 2
+                penalty += d**2
         return penalty
 
     if func_name == "is_point_out_triangle" and len(params) == 4:
@@ -221,8 +226,10 @@ def _constraint_residual(func_name, params, variables, coordinates):
             return None
         # Convention: first 3 params define triangle (A,B,C), last param is test point (P)
         A, B, C, P = points
+
         def _cross(O, X, Y):
             return (X[0] - O[0]) * (Y[1] - O[1]) - (X[1] - O[1]) * (Y[0] - O[0])
+
         orient = _cross(A, B, C)
         if abs(orient) < 1e-10:
             return 0.0
@@ -421,8 +428,12 @@ def extract_and_modify_nelder_mead(coordinates, condition_code, variables):
     best_penalty = float("inf")
     best_x = None
     known_points = _resolve_known_points(coordinates)
-    centroid_x = sum(p[0] for p in known_points) / len(known_points) if known_points else 0.0
-    centroid_y = sum(p[1] for p in known_points) / len(known_points) if known_points else 0.0
+    centroid_x = (
+        sum(p[0] for p in known_points) / len(known_points) if known_points else 0.0
+    )
+    centroid_y = (
+        sum(p[1] for p in known_points) / len(known_points) if known_points else 0.0
+    )
     n_vars = len(key_list)
 
     # Detect circle constraints for smart seeding
@@ -435,7 +446,11 @@ def extract_and_modify_nelder_mead(coordinates, condition_code, variables):
         for seed_idx in range(n_circle_seeds):
             base_angle = (2 * math.pi * seed_idx) / n_circle_seeds
             # Add jitter so seeds explore a range of angles, not just fixed slots
-            jitter = rng.uniform(-math.pi / n_circle_seeds, math.pi / n_circle_seeds) if n_circle_seeds > 1 else rng.uniform(-math.pi, math.pi)
+            jitter = (
+                rng.uniform(-math.pi / n_circle_seeds, math.pi / n_circle_seeds)
+                if n_circle_seeds > 1
+                else rng.uniform(-math.pi, math.pi)
+            )
             seed_values = {}
             for (cx, cy), radius, points in circle_constraints:
                 for i, (point_name, _r) in enumerate(points):
@@ -510,7 +525,9 @@ def extract_and_modify_nelder_mead(coordinates, condition_code, variables):
 
         if feasible and improved:
             best_variables = candidate
-            print(f"Restart {restart + 1}: feasible assignment (penalty={raw_penalty:.6f})")
+            print(
+                f"Restart {restart + 1}: feasible assignment (penalty={raw_penalty:.6f})"
+            )
             if raw_penalty < EARLY_EXIT_PENALTY:
                 break
 
@@ -531,10 +548,14 @@ def extract_and_modify_nelder_mead(coordinates, condition_code, variables):
         if polish_feasible and polish_penalty < best_penalty:
             best_penalty = polish_penalty
             best_variables = polish_candidate
-            print(f"L-BFGS-B polish: feasible assignment (penalty={polish_penalty:.6f})")
+            print(
+                f"L-BFGS-B polish: feasible assignment (penalty={polish_penalty:.6f})"
+            )
         elif best_variables is None and polish_feasible:
             best_variables = polish_candidate
-            print(f"L-BFGS-B polish: rescued feasible assignment (penalty={polish_penalty:.6f})")
+            print(
+                f"L-BFGS-B polish: rescued feasible assignment (penalty={polish_penalty:.6f})"
+            )
 
     if best_variables is not None:
         for key in variables:
