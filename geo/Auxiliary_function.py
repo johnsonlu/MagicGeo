@@ -529,10 +529,6 @@ def convert_conditions(text, variables, coordinates, conditions_data, radius=Non
     print("[convert_conditions] conditions_execute:", conditions_execute)
     return coordinates, variables, calculate_point_conditions, conditions_execute
 
-
-"""利用对应格式的字典生成变量"""
-
-
 def _ensure_radius_variable(variable_names):
     if "r" not in variable_names:
         variable_names["r"] = [0, False]
@@ -609,6 +605,36 @@ def is_number(s, radius=None):
             return s, False
 
 
+_NUMERIC_TAIL_FUNCTION_FORMATS = {
+    "angle": (4, 3),
+    "dist": (3, 2),
+    "line_ratio": (5, 4),
+    "angle_relation": (7, 6),
+}
+
+_LEN_ONLY_FUNCTION_FORMATS = {
+    "ortho": 4,
+    "online": 3,
+    "online_extension": 3,
+    "online_inside": 3,
+    "midpoint": 3,
+    "angle_bisector": 5,
+    "parallel": 4,
+    "is_point_in_triangle": 4,
+    "is_point_out_triangle": 4,
+    "is_acute_triangle": 3,
+    "arc_midpoint": 3,
+}
+
+
+def _validate_numeric_param(params, index, radius=None, *, use_radius=False):
+    value, is_numeric = is_number(
+        params[index], radius if use_radius else None
+    )
+    params[index] = value
+    return is_numeric
+
+
 def check_function_format(function_name, params, radius=None):
     """
     检查输入的函数名和参数格式是否正确。
@@ -620,80 +646,27 @@ def check_function_format(function_name, params, radius=None):
     返回:
         bool: 如果参数格式正确且最后一个参数是一个数值，返回 True；否则返回 False。
     """
-    if function_name == "angle":
-        if len(params) == 4:
-            value, is_number_value = is_number(params[3])
-            params[3] = value
-            return is_number_value
-        else:
+    if function_name == "equal_line":
+        return len(params) in (3, 4)
+
+    numeric_format = _NUMERIC_TAIL_FUNCTION_FORMATS.get(function_name)
+    if numeric_format is not None:
+        expected_len, numeric_index = numeric_format
+        if len(params) != expected_len:
             return False
-    elif function_name == "dist":
-        if len(params) == 3:
-            value, is_number_value = is_number(params[2], radius)
-            params[2] = value
-            return is_number_value
-        else:
-            return False
-    elif function_name == "line_ratio":
-        if len(params) == 5:
-            value, is_number_value = is_number(params[4])  # 检查倍数因子 k 是否为数字
-            params[4] = value
-            return is_number_value
-        else:
-            return False
-    elif function_name == "equal_line":
-        # 检查 equal_line 是否有 4 个参数
-        return len(params) == 4 or len(params) == 3
-    # elif function_name == "equal_segment":
-    #     # 检查 equal_segment 是否有 3 个参数
-    #     return len(params) == 3
-    elif function_name == "ortho":
-        # 检查 ortho 是否有 4 个参数
-        return len(params) == 4
-    elif function_name == "online":
-        # 检查 online 是否有 3 个参数
-        return len(params) == 3
-    elif function_name == "online_extension":
-        # 检查 online 是否有 3 个参数
-        return len(params) == 3
-    elif function_name == "online_inside":
-        # 检查 online 是否有 3 个参数
-        return len(params) == 3
-    elif function_name == "midpoint":
-        # 检查 midpoint 是否有 3 个参数
-        return len(params) == 3
-    elif function_name == "angle_bisector":
-        # 检查 angle_bisector 是否有 3 个参数
-        return len(params) == 5
-    elif function_name == "parallel":
-        # 检查 parallel 是否有 3 个参数
-        return len(params) == 4
-    elif function_name == "is_point_in_triangle":
-        # 检查 is_point_in_triangle 是否有 4 个参数
-        return len(params) == 4
-    elif function_name == "is_point_out_triangle":
-        # 检查 is_point_in_triangle 是否有 4 个参数
-        return len(params) == 4
-    elif function_name == "is_acute_triangle":
-        # 检查 is_acute_triangle 是否有 3 个参数
-        return len(params) == 3
-    elif function_name == "angle_relation":
-        # 检查 angle_relation 是否有 7 个参数
-        if len(params) == 7:
-            value, is_number_value = is_number(params[6])  # 检查第七个参数
-            params[6] = value
-            return is_number_value
-        else:
-            return False
-    elif function_name == "arc_midpoint":
-        # 检查 arc_midpoint 是否有 3 个参数
-        return len(params) == 3
-    # else:
-    #     print("格式错误，请停止重新启动")
-    #     exit()
-    else:
-        print(f"{function_name} check_function_format 格式错误，请停止重新启动")
-        return False
+        return _validate_numeric_param(
+            params,
+            numeric_index,
+            radius,
+            use_radius=function_name == "dist",
+        )
+
+    expected_len = _LEN_ONLY_FUNCTION_FORMATS.get(function_name)
+    if expected_len is not None:
+        return len(params) == expected_len
+
+    print(f"{function_name} check_function_format 格式错误，请停止重新启动")
+    return False
 
 
 def check_condition_break(condition_code, coordinates, variables):
