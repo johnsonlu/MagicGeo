@@ -332,33 +332,6 @@ def add_on_circle_dist_constraints(text, coordinates, conditions, radius=None):
     return conditions
 
 
-def _parse_conditions_text(conditions_str, radius=None):
-    conditions = []
-    calculate_point_conditions = []
-    lines = conditions_str.strip().split("\n")
-
-    for line in lines:
-        if not line.strip():
-            continue
-        parts = re.split(r",(?=\s*')", line.strip())
-        for part in parts:
-            part = part.strip().rstrip(",")
-            match = re.match(r"'(\w+)':\s*(\w+)\((.*)\)", part)
-            if match:
-                condition_type = match.group(1)
-                function_name = match.group(2)
-                params = [
-                    param.strip()
-                    for param in re.split(r",\s*(?![^(]*\))", match.group(3))
-                ]
-                if check_function_format(function_name, params, radius):
-                    if condition_type in calculate_point_function:
-                        calculate_point_conditions.append([function_name, params])
-                    else:
-                        conditions.append([function_name, params])
-    return conditions, calculate_point_conditions
-
-
 def _coord_is_numeric(value):
     return not isinstance(value, str)
 
@@ -496,15 +469,6 @@ def _parse_conditions_dict(conditions_data, radius):
     return conditions, calculate_point_conditions
 
 
-def _parse_conditions_input(conditions_data, radius):
-    if isinstance(conditions_data, dict):
-        return _parse_conditions_dict(conditions_data, radius)
-    if isinstance(conditions_data, str):
-        return _parse_conditions_text(conditions_data, radius)
-    print(f"不支持的 conditions_data 类型: {type(conditions_data)}")
-    return None
-
-
 def _apply_llm_condition_filter(text, conditions):
     kept = filter_conditions_with_llm(text, conditions)
     for cond in conditions:
@@ -541,10 +505,12 @@ def _apply_derived_point_conditions(calculate_point_conditions, coordinates, var
 
 
 def convert_conditions(text, variables, coordinates, conditions_data, radius=None):
-    parsed = _parse_conditions_input(conditions_data, radius)
-    if parsed is None:
+    if not isinstance(conditions_data, dict):
+        print(f"不支持的 conditions_data 类型: {type(conditions_data)}")
         return coordinates, variables, [], []
-    conditions, calculate_point_conditions = parsed
+    conditions, calculate_point_conditions = _parse_conditions_dict(
+        conditions_data, radius
+    )
 
     fix_online_inside_coordinates(coordinates, variables, conditions)
     conditions = _apply_llm_condition_filter(text, conditions)
