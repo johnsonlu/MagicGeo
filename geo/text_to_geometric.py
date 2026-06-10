@@ -158,7 +158,6 @@ def process_geometry_task(item, generic_knowledge, output_dir=None):
         "'dist': ['dist', 'O', '点名称', 'r']（半径用 r，与坐标中的 r 一致）\n"
         "示例：{\"coordinates\": {\"O\": [0, 0], \"A\": [\"r\", 0], \"B\": [\"a\", \"b\"]}, "
         "\"conditions\": {\"c1\": [\"dist\", \"O\", \"A\", \"r\"], \"c2\": [\"angle\", \"B\", \"A\", \"C\", 35]}}\n"
-        "矩形对角线交点示例：O 写 [\"m\", \"n\"]，配合 midpoint(O,A,C) 和 midpoint(O,B,D)，不要写 [\"a/2\", \"b/2\"]。"
     )
 
     full_prompt = f"{generic_knowledge}\n\n当前题目辅助背景：{extra_info}"

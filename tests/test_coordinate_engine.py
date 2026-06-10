@@ -477,6 +477,90 @@ def test_quadrangle_problem_1_solves_with_midpoint_soft_residual(
     assert_feasible(condition_code, coordinates, result_variables)
 
 
+def test_sanitize_compound_coordinate_variables_renames_a_plus_b():
+    from geo.Auxiliary_function import convert_coordinates
+
+    coordinates, variables = convert_coordinates(
+        {
+            "A": [0, 0],
+            "B": ["a", 0],
+            "C": ["a+b", "c"],
+            "D": ["b", "c"],
+        }
+    )
+
+    assert "a+b" not in variables
+    assert coordinates["C"][0] == "cx"
+    assert "cx" in variables
+
+
+def test_add_parallelogram_parallel_constraints_injects_missing_pairs():
+    from geo.Auxiliary_function import add_parallelogram_parallel_constraints
+
+    text = "在平行四边形ABCD中，F在BC延长线上，E为线段CD的中点"
+    coordinates = {
+        "A": (0.0, 0.0),
+        "B": ("a", 0.0),
+        "C": ("cx", "c"),
+        "D": ("b", "c"),
+        "E": ("e1", "e2"),
+        "F": ("f1", "f2"),
+    }
+    conditions = [["ortho", ["A", "C", "B", "C"]]]
+
+    result = add_parallelogram_parallel_constraints(text, coordinates, conditions)
+    parallel_params = [params for name, params in result if name == "parallel"]
+
+    assert ["A", "B", "D", "C"] in parallel_params
+    assert ["A", "D", "B", "C"] in parallel_params
+
+
+def test_quadrangle_problem_25_solves_with_sanitized_llm_output(
+    monkeypatch, fast_nelder_mead_env
+):
+    from geo.Auxiliary_function import convert_conditions, convert_coordinates
+
+    text = (
+        "在平行四边形ABCD中，F在BC延长线上，E为线段CD的中点,E在AF上，"
+        "∠ACB=90°，AD=BC,连接DF,CF。"
+    )
+    result = {
+        "coordinates": {
+            "A": [0, 0],
+            "B": ["a", 0],
+            "C": ["a+b", "c"],
+            "D": ["b", "c"],
+            "E": ["e1", "e2"],
+            "F": ["f1", "f2"],
+        },
+        "conditions": {
+            "c1": ["ortho", "A", "C", "B", "C"],
+            "c2": ["midpoint", "E", "C", "D"],
+            "c3": ["online_extension", "F", "B", "C"],
+            "c4": ["online_inside", "E", "A", "F"],
+        },
+    }
+
+    coordinates, variables = convert_coordinates(result["coordinates"])
+    assert coordinates["C"][0] == "cx"
+    coordinates, variables, _, condition_code = convert_conditions(
+        text, variables, coordinates, result["conditions"]
+    )
+    assert any("parallel" in code for code in condition_code)
+
+    extract_and_modify = reload_extract_and_modify(
+        monkeypatch,
+        COORDINATE_ENGINE="nelder_mead",
+        **{**fast_nelder_mead_env, "NELDER_MEAD_RESTARTS": "24"},
+    )
+    _, result_variables, found = extract_and_modify(
+        coordinates, condition_code, variables.copy()
+    )
+
+    assert found is True
+    assert_feasible(condition_code, coordinates, result_variables)
+
+
 def test_add_on_circle_dist_constraints_does_not_duplicate():
     from geo.Auxiliary_function import add_on_circle_dist_constraints
 

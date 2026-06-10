@@ -19,7 +19,7 @@ from geo.coordinate_engine_config import (
     COORDINATE_LOW,
     EARLY_EXIT_PENALTY,
     NELDER_MEAD_MAXITER,
-    NELDER_MEAD_RESTARTS,
+    effective_nelder_mead_restarts,
 )
 
 _EXECUTE_CODE_RE = re.compile(r"^(\w+)\((?:variables,)?(.+),coordinates\)$")
@@ -409,7 +409,8 @@ def extract_and_modify_nelder_mead(coordinates, condition_code, variables):
     if not key_list:
         return coordinates, variables, True
 
-    print(f"Nelder-Mead: {len(key_list)} variables, {NELDER_MEAD_RESTARTS} restarts")
+    n_restarts = effective_nelder_mead_restarts(len(key_list))
+    print(f"Nelder-Mead: {len(key_list)} variables, {n_restarts} restarts")
     print(f"Keys: {key_list}")
 
     rng = np.random.default_rng()
@@ -428,7 +429,7 @@ def extract_and_modify_nelder_mead(coordinates, condition_code, variables):
     # at evenly-spaced base angles with random jitter for diversity
     circle_seeds = []
     if circle_constraints:
-        n_circle_seeds = max(0, min(6, NELDER_MEAD_RESTARTS - 2))
+        n_circle_seeds = max(0, min(6, n_restarts - 2))
         for seed_idx in range(n_circle_seeds):
             base_angle = (2 * math.pi * seed_idx) / n_circle_seeds
             # Add jitter so seeds explore a range of angles, not just fixed slots
@@ -461,7 +462,7 @@ def extract_and_modify_nelder_mead(coordinates, condition_code, variables):
         state = _apply_values(variables, key_list, values)
         return _compute_penalty(condition_code, coordinates, state, BOOLEAN_PENALTY)
 
-    for restart in range(NELDER_MEAD_RESTARTS):
+    for restart in range(n_restarts):
         if time.monotonic() >= deadline:
             break
 

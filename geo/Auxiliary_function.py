@@ -142,6 +142,11 @@ _ON_CIRCLE_PATTERNS = (
     re.compile(r"([A-Z]{2})是[⊙]?O的半径"),
 )
 _OUTSIDE_CIRCLE_PATTERN = re.compile(r"点([A-Z])是[⊙]?O外")
+_COMPOUND_VAR_RE = re.compile(r"[+\-*/^]")
+_SIMPLE_VAR_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_PARALLELOGRAM_SHAPE_RE = re.compile(
+    r"(?:平行四边形|菱形|矩形|正方形)\s*([A-Z]{4})"
+)
 
 
 def _extract_on_circle_points(text):
@@ -164,6 +169,95 @@ def _has_dist_on_circle(conditions, center, point):
         if params[0] == center and params[1] == point:
             return True
     return False
+
+
+def _is_forbidden_variable_name(name):
+    if is_r_dependent_expression(name):
+        return False
+    if not _SIMPLE_VAR_RE.match(name):
+        return True
+    return bool(_COMPOUND_VAR_RE.search(name))
+
+
+def _replacement_variable_name(point, axis_idx, used_names):
+    suffix = "x" if axis_idx == 0 else "y"
+    candidate = f"{point.lower()}{suffix}"
+    if candidate not in used_names:
+        return candidate
+    index = 2
+    while f"{candidate}{index}" in used_names:
+        index += 1
+    return f"{candidate}{index}"
+
+
+def sanitize_compound_coordinate_variables(coordinates, variables):
+    """Rename forbidden compound identifiers (e.g. a+b) to simple names."""
+    renames = {}
+    sanitized_coords = {}
+
+    for point, coord in coordinates.items():
+        new_coord = []
+        for axis_idx, value in enumerate(coord):
+            if not isinstance(value, str) or not _is_forbidden_variable_name(value):
+                new_coord.append(value)
+                continue
+            if value not in renames:
+                renames[value] = _replacement_variable_name(
+                    point, axis_idx, set(variables) | set(renames.values())
+                )
+                print(
+                    f"[sanitize] renamed compound variable '{value}' -> '{renames[value]}'"
+                )
+            new_coord.append(renames[value])
+        sanitized_coords[point] = tuple(new_coord)
+
+    if not renames:
+        return coordinates, variables
+
+    new_variables = {}
+    for key, state in variables.items():
+        new_key = renames.get(key, key)
+        new_variables[new_key] = state
+    return sanitized_coords, new_variables
+
+
+def _has_parallel_constraint(conditions, params):
+    for function_name, cond_params in conditions:
+        if function_name != "parallel" or len(cond_params) != 4:
+            continue
+        if cond_params == params:
+            return True
+    return False
+
+
+def add_parallelogram_parallel_constraints(text, coordinates, conditions):
+    """Inject AB ∥ CD and AD ∥ BC when the problem states a parallelogram."""
+    match = _PARALLELOGRAM_SHAPE_RE.search(text)
+    if not match:
+        return conditions
+
+    vertices = list(match.group(1))
+    if len(vertices) != 4:
+        return conditions
+    a, b, c, d = vertices
+    if not all(vertex in coordinates for vertex in vertices):
+        return conditions
+
+    needed = (
+        (a, b, d, c),
+        (a, d, b, c),
+    )
+    added = []
+    for params in needed:
+        if _has_parallel_constraint(conditions, list(params)):
+            continue
+        conditions.append(["parallel", list(params)])
+        added.append(f"parallel({','.join(params)})")
+
+    if added:
+        print(f"\n added parallelogram parallel constraints: {', '.join(added)}\n")
+
+    return conditions
 
 
 def add_on_circle_dist_constraints(text, coordinates, conditions, radius=None):
@@ -316,6 +410,7 @@ def convert_conditions(text, variables, coordinates, conditions_data, radius=Non
     conditions = add_on_circle_dist_constraints(
         text, coordinates, conditions, radius=radius
     )
+    conditions = add_parallelogram_parallel_constraints(text, coordinates, conditions)
 
                 
 # delete conditions that have already satisfied.
@@ -436,7 +531,7 @@ def convert_coordinates(coordinates, radius=None):
                 coord_value.append(parsed)
             converted_coords[key] = tuple(coord_value)
 
-    return converted_coords, variable_names
+    return sanitize_compound_coordinate_variables(converted_coords, variable_names)
 
 
 
