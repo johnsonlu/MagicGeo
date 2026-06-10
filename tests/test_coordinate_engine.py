@@ -490,6 +490,42 @@ def test_quadrangle_problem_1_solves_with_derived_midpoint(
     assert abs(oy - (ay + cy) / 2) < 0.01
 
 
+def test_circle_problem_43_solves_with_derived_center(
+    monkeypatch, fast_nelder_mead_env
+):
+    """Regression: dist-on-circle seeding must resolve calc_midpoint centers."""
+    coordinates = {
+        "A": (0.0, 1.0),
+        "B": (-1.0, 0.0),
+        "C": ("a", "b"),
+        "D": (1.0, 0.0),
+        "O": [
+            "calc_midpoint(variables,coordinates['B'],coordinates['D'],coordinates)"
+        ],
+    }
+    variables = {"a": [0.0, False], "b": [0.0, False]}
+    condition_code = [
+        _dist_code("O", "C", 1),
+        (
+            "angle_relation(variables,coordinates['B'],coordinates['C'],"
+            "coordinates['A'],coordinates['A'],coordinates['C'],"
+            "coordinates['D'],1.0,coordinates)"
+        ),
+    ]
+
+    extract_and_modify = reload_extract_and_modify(
+        monkeypatch,
+        COORDINATE_ENGINE="nelder_mead",
+        **fast_nelder_mead_env,
+    )
+    _, result_variables, found = extract_and_modify(
+        coordinates, condition_code, variables.copy()
+    )
+
+    assert found is True
+    assert_feasible(condition_code, coordinates, result_variables)
+
+
 def test_sanitize_compound_coordinate_variables_renames_a_plus_b():
     from geo.Auxiliary_function import convert_coordinates
 

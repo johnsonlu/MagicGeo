@@ -359,15 +359,24 @@ def _is_feasible(condition_code, coordinates, variables):
     return not check_condition_break(condition_code, coordinates, variables)
 
 
-def _resolve_known_points(coordinates):
+def _resolve_numeric_coord(ref, variables, coordinates):
+    """Return (x, y) as floats when fully numeric, else None."""
+    is_calculate, point_list = check_is_calculate(variables, [ref], coordinates)
+    if not is_calculate:
+        return None
+    x, y = point_list[0]
+    if isinstance(x, str) or isinstance(y, str):
+        return None
+    return float(x), float(y)
+
+
+def _resolve_known_points(coordinates, variables):
     """Return list of (x, y) for coordinates with fully known numeric values."""
     resolved = []
     for ref in coordinates.values():
-        if len(ref) != 2:
-            continue
-        x, y = ref
-        if not isinstance(x, str) and not isinstance(y, str):
-            resolved.append((float(x), float(y)))
+        coord = _resolve_numeric_coord(ref, variables, coordinates)
+        if coord is not None:
+            resolved.append(coord)
     return resolved
 
 
@@ -376,7 +385,7 @@ _CIRCLE_CONSTRAINT_RE = re.compile(
 )
 
 
-def _detect_circle_constraints(condition_code, coordinates):
+def _detect_circle_constraints(condition_code, coordinates, variables):
     """Find groups of unknown points pinned to the same circle.
 
     Returns a list of (center_xy, radius, [var_x_key, var_y_key, ...]) tuples.
@@ -393,13 +402,18 @@ def _detect_circle_constraints(condition_code, coordinates):
         # Center must be a known (fully numeric) point
         if center_name not in coordinates:
             continue
-        cx, cy = coordinates[center_name]
-        if isinstance(cx, str) or isinstance(cy, str):
+        center_xy = _resolve_numeric_coord(
+            coordinates[center_name], variables, coordinates
+        )
+        if center_xy is None:
             continue
         # Point must have unknown variables
         if point_name not in coordinates:
             continue
-        px, py = coordinates[point_name]
+        point_ref = coordinates[point_name]
+        if len(point_ref) != 2:
+            continue
+        px, py = point_ref
         if not isinstance(px, str) and not isinstance(py, str):
             continue
         key = (center_name, radius_str)
@@ -408,8 +422,12 @@ def _detect_circle_constraints(condition_code, coordinates):
     # Group by circle: return structured info
     result = []
     for (center_name, radius), points in circles.items():
-        cx, cy = coordinates[center_name]
-        result.append(((float(cx), float(cy)), radius, points))
+        center_xy = _resolve_numeric_coord(
+            coordinates[center_name], variables, coordinates
+        )
+        if center_xy is None:
+            continue
+        result.append((center_xy, radius, points))
     return result
 
 
@@ -427,7 +445,7 @@ def extract_and_modify_nelder_mead(coordinates, condition_code, variables):
     best_variables = None
     best_penalty = float("inf")
     best_x = None
-    known_points = _resolve_known_points(coordinates)
+    known_points = _resolve_known_points(coordinates, variables)
     centroid_x = (
         sum(p[0] for p in known_points) / len(known_points) if known_points else 0.0
     )
@@ -437,7 +455,9 @@ def extract_and_modify_nelder_mead(coordinates, condition_code, variables):
     n_vars = len(key_list)
 
     # Detect circle constraints for smart seeding
-    circle_constraints = _detect_circle_constraints(condition_code, coordinates)
+    circle_constraints = _detect_circle_constraints(
+        condition_code, coordinates, variables
+    )
     # Build circle-aware seeds: place unknown points on their circles
     # at evenly-spaced base angles with random jitter for diversity
     circle_seeds = []
